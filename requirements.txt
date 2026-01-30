@@ -1,14 +1,18 @@
 # Core dependencies
+# runpod>=1.6.0
+# vllm>=0.8.5
+# torch>=2.6.0
+# transformers>=4.46.3
+# tokenizers>=0.20.3
 runpod>=1.6.0
-vllm>=0.8.5
-torch>=2.6.0
 transformers>=4.46.3
 tokenizers>=0.20.3
 
 # Image processing
 Pillow>=10.0.0
 PyMuPDF>=1.23.0
-torchvision>=0.21.0
+# torchvision>=0.21.0
+torchvision
 
 # Model dependencies
 einops>=0.8.0

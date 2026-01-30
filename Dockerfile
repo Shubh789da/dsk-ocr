@@ -2,7 +2,7 @@
 # Extracts INDICATIONS AND USAGE from FDA pharmaceutical labels
 
 # Base image with CUDA and Python
-FROM runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04
+FROM vllm/vllm-openai:latest
 
 # Set working directory
 WORKDIR /app
@@ -27,7 +27,7 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
     pip install --no-cache-dir -r requirements.txt
 
 # Install flash-attention (requires GPU for compilation - will be built on first run if needed)
-RUN pip install --no-cache-dir flash-attn --no-build-isolation || echo "Flash attention will be installed at runtime"
+# Flash attention is already included in the base image
 
 # Copy application code
 COPY config.py .
