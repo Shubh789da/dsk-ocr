@@ -1,0 +1,44 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info
+.eggs
+dist
+build
+
+# Virtual environments
+venv
+env
+.venv
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# Test files
+test_*.py
+tests/
+*.test.py
+
+# Documentation
+*.md
+!README.md
+
+# Local files
+.env
+.env.local
+*.log
+logs/
+
+# Model cache (if not baking into image)
+hf_cache/
+models/
