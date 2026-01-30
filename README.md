@@ -33,18 +33,18 @@ RunPod provides pre-built vLLM workers. However, DeepSeek-OCR-2 requires custom 
 
 #### Step 1: Build Docker Image on CPU Machine
 
-You can build the Docker image on any machine (including CPU-only). The GPU is only needed at runtime.
+You can build the Docker image on any machine (including CPU-only). We use `vllm/vllm-openai:latest` as the base image, which comes with PyTorch, CUDA, and Flash Attention pre-installed. This makes the build process very fast (no compilation required).
 
 ```bash
 # On your local machine or a CPU pod
 cd dsk-ep
 
 # Build the image (specify linux/amd64 platform for RunPod)
-docker build --platform linux/amd64 -t your-dockerhub-username/dsk-ocr-endpoint:v1.0 .
+docker build -t shubh0078/dsk-ocr-endpoint:v1.0 .
 
 # Push to Docker Hub
 docker login
-docker push your-dockerhub-username/dsk-ocr-endpoint:v1.0
+docker push shubh0078/dsk-ocr-endpoint:v1.0
 ```
 
 #### Step 2: Build on RunPod CPU Pod (Alternative)
@@ -58,18 +58,18 @@ If you don't have Docker locally, use a RunPod CPU pod:
 
 ```bash
 # On RunPod CPU pod
-git clone <your-repo-url>
-cd dsk-ep
+git clone https://github.com/Shubh789da/dsk-ocr.git
+cd dsk-ocr/dsk-ep
 
 # Install Docker if not available
 apt-get update && apt-get install -y docker.io
 
 # Build image
-docker build -t your-dockerhub-username/dsk-ocr-endpoint:v1.0 .
+docker build -t shubh0078/dsk-ocr-endpoint:v1.0 .
 
 # Push to Docker Hub
 docker login
-docker push your-dockerhub-username/dsk-ocr-endpoint:v1.0
+docker push shubh0078/dsk-ocr-endpoint:v1.0
 ```
 
 #### Step 3: Create RunPod Serverless Endpoint
