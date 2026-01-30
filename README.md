@@ -23,6 +23,22 @@ dsk-ep/
     └── sam_vary_sdpa.py
 ```
 
+## Prerequisites
+
+Before running this project, ensure you have the following installed:
+
+1. **Docker**: You need Docker to build the container image.
+   - **Windows**: [Install Docker Desktop for Windows](https://docs.docker.com/desktop/install/windows-install/)
+   - **Mac**: [Install Docker Desktop for Mac](https://docs.docker.com/desktop/install/mac-install/)
+   - **Linux**: [Install Docker Engine on Ubuntu](https://docs.docker.com/engine/install/ubuntu/) or your distribution.
+
+   Verify installation by running:
+   ```bash
+   docker --version
+   ```
+
+2. **Git**: Required to clone the repository.
+
 ## Quick Start
 
 ### Option 1: Use Pre-built RunPod vLLM Worker (Simplest)

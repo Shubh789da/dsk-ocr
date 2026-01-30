@@ -10,7 +10,14 @@ import torch.nn.functional as F
 
 from typing import Optional, Tuple, Type
 from functools import partial
-from flash_attn import flash_attn_qkvpacked_func
+
+# flash_attn is optional - we use PyTorch's scaled_dot_product_attention instead
+try:
+    from flash_attn import flash_attn_qkvpacked_func
+    HAS_FLASH_ATTN = True
+except ImportError:
+    HAS_FLASH_ATTN = False
+    flash_attn_qkvpacked_func = None
 # from .common import LayerNorm2d, MLPBlock
 
 # from mmgpt.model.vision_encoder.flash_4 import _attention_rel_h_rel_w

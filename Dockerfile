@@ -1,8 +1,9 @@
 # RunPod Serverless Endpoint for DeepSeek-OCR-2
 # Extracts INDICATIONS AND USAGE from FDA pharmaceutical labels
 
-# Base image with CUDA and Python
-FROM vllm/vllm-openai:latest
+# Base image: vLLM v0.8.5 (required for DeepSeek-OCR-2 multimodal APIs)
+# This version has PromptUpdate, BaseMultiModalProcessor, etc.
+FROM vllm/vllm-openai:v0.8.5
 
 # Set working directory
 WORKDIR /app
@@ -44,5 +45,5 @@ COPY deepseek_ocr2.py .
 # Create cache directories
 RUN mkdir -p /app/hf_cache
 
-# Set the entrypoint
-CMD ["python", "-u", "handler.py"]
+# Set the entrypoint (OVERRIDE base image entrypoint)
+ENTRYPOINT ["python3", "-u", "handler.py"]
