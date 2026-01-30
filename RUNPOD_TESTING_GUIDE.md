@@ -59,16 +59,16 @@ You should see your GPU (RTX 4090, A100, etc.)
 ### 3.1 Install vLLM v0.8.5 (Required Version)
 ```bash
 # Install vLLM 0.8.5 specifically
-pip install vllm==0.8.5
+pip3.12 install vllm==0.8.5
 
 # Verify version
-python -c "import vllm; print(vllm.__version__)"
+python3.12 -c "import vllm; print(vllm.__version__)"
 # Should print: 0.8.5
 ```
 
 ### 3.2 Install Other Dependencies
 ```bash
-pip install runpod transformers tokenizers Pillow PyMuPDF torchvision einops addict easydict numpy requests tqdm
+pip3.12 install runpod transformers tokenizers Pillow PyMuPDF torchvision einops addict easydict numpy requests tqdm
 ```
 
 ### 3.3 Clone/Upload Your Code
@@ -101,7 +101,7 @@ ls -la
 
 ### 4.2 Test Imports First
 ```bash
-python -c "
+python3.12 -c "
 import torch
 print(f'PyTorch: {torch.__version__}')
 print(f'CUDA available: {torch.cuda.is_available()}')
@@ -117,7 +117,7 @@ print('vLLM multimodal imports OK')
 
 ### 4.3 Test Model Loading
 ```bash
-python -c "
+python3.12 -c "
 from vllm import LLM
 from vllm.model_executor.models.registry import ModelRegistry
 from deepseek_ocr2 import DeepseekOCR2ForCausalLM
@@ -145,12 +145,12 @@ scp -P <port> /path/to/test.pdf root@<pod-ip>:/workspace/dsk-ep/
 
 # On the pod, run test
 cd /workspace/dsk-ep
-python handler.py /workspace/dsk-ep/test.pdf
+python3.12 handler.py /workspace/dsk-ep/test.pdf
 ```
 
 ### 4.5 Test Full Handler (Interactive)
 ```bash
-python -c "
+python3.12 -c "
 import base64
 from handler import process_pdf
 
@@ -178,10 +178,10 @@ print(f'\\nPages: {result[\"page_count\"]}')
 ### Issue: Module not found
 ```bash
 # Check what's installed
-pip list | grep -i <module_name>
+pip3.12 list | grep -i <module_name>
 
 # Install missing module
-pip install <module_name>
+pip3.12 install <module_name>
 ```
 
 ### Issue: CUDA out of memory
@@ -205,11 +205,11 @@ huggingface-cli login
 ### Issue: vLLM version mismatch
 ```bash
 # Check version
-pip show vllm
+pip3.12 show vllm
 
 # Force reinstall correct version
-pip uninstall vllm -y
-pip install vllm==0.8.5
+pip3.12 uninstall vllm -y
+pip3.12 install vllm==0.8.5
 ```
 
 ---
@@ -237,7 +237,7 @@ docker push shubh0078/dsk-ocr-endpoint:v1.2
 ### 6.2 Update Dockerfile with Working Versions
 After testing, note the exact versions that worked:
 ```bash
-pip freeze > working_versions.txt
+pip3.12 freeze > working_versions.txt
 cat working_versions.txt
 ```
 
@@ -269,16 +269,16 @@ Once Docker image is pushed:
 nvidia-smi
 
 # Check Python packages
-pip list
+pip3.12 list
 
 # Check vLLM version
-python -c "import vllm; print(vllm.__version__)"
+python3.12 -c "import vllm; print(vllm.__version__)"
 
 # Test imports
-python -c "from deepseek_ocr2 import DeepseekOCR2ForCausalLM; print('OK')"
+python3.12 -c "from deepseek_ocr2 import DeepseekOCR2ForCausalLM; print('OK')"
 
 # Run handler with test PDF
-python handler.py test.pdf
+python3.12 handler.py test.pdf
 
 # Monitor GPU usage (live)
 watch -n 1 nvidia-smi

@@ -1,11 +1,11 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.12
 """
 Test script to validate DeepSeek-OCR-2 setup on RunPod
 Run this BEFORE building Docker image to catch issues early.
 
 Usage:
-    python test_setup.py              # Test imports and model loading
-    python test_setup.py test.pdf     # Test with actual PDF
+    python3.12 test_setup.py              # Test imports and model loading
+    python3.12 test_setup.py test.pdf     # Test with actual PDF
 """
 
 import sys

@@ -19,7 +19,7 @@ MODEL_PATH = os.getenv('MODEL_PATH', 'deepseek-ai/DeepSeek-OCR-2')
 
 PROMPT = '<image>\n<|grounding|>Convert the document to markdown.'
 
-# Lazy load tokenizer to avoid loading at import time
+# Lazy load tokenizer
 _tokenizer = None
 
 def get_tokenizer():
@@ -30,9 +30,5 @@ def get_tokenizer():
         _tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH, trust_remote_code=True)
     return _tokenizer
 
-# For backward compatibility - will be loaded on first access
-class _TokenizerProxy:
-    def __getattr__(self, name):
-        return getattr(get_tokenizer(), name)
-
-TOKENIZER = _TokenizerProxy()
+# TOKENIZER is now a function - callers should use get_tokenizer() or TOKENIZER()
+TOKENIZER = get_tokenizer
