@@ -7,6 +7,7 @@ Extracts INDICATIONS AND USAGE from FDA pharmaceutical label PDFs
 import os
 os.environ['VLLM_USE_V1'] = '0'  # Disable V1 engine (causes OOM with multimodal)
 os.environ['VLLM_ATTENTION_BACKEND'] = 'XFORMERS'  # Use xformers backend
+os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'  # Help with memory fragmentation
 
 import io
 import base64
@@ -30,13 +31,40 @@ from extraction import extract_indications_and_usage_fda, clean_ocr_artifacts
 # Import runpod AFTER vllm to avoid any conflicts
 import runpod
 
-# Configuration
+# Configuration with auto-detection
 MODEL_PATH = os.getenv('MODEL_PATH', 'deepseek-ai/DeepSeek-OCR-2')
-MAX_CONCURRENCY = int(os.getenv('MAX_CONCURRENCY', '50'))
-NUM_WORKERS = int(os.getenv('NUM_WORKERS', '32'))
 CROP_MODE = os.getenv('CROP_MODE', 'True').lower() == 'true'
-GPU_MEMORY_UTILIZATION = float(os.getenv('GPU_MEMORY_UTILIZATION', '0.85'))  # Reduced from 0.9
-MAX_MODEL_LEN = int(os.getenv('MAX_MODEL_LEN', '8192'))
+
+# Auto-configure memory settings based on GPU
+if torch.cuda.is_available():
+    total_vram_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
+    print(f"Detected GPU: {torch.cuda.get_device_name(0)} with {total_vram_gb:.1f}GB VRAM")
+
+    if total_vram_gb >= 70:  # H100/A100 80GB
+        DEFAULT_GPU_MEM = 0.50
+        DEFAULT_MAX_LEN = 4096
+        DEFAULT_MAX_SEQS = 8
+        DEFAULT_WORKERS = 16
+    elif total_vram_gb >= 40:  # A100 40GB
+        DEFAULT_GPU_MEM = 0.45
+        DEFAULT_MAX_LEN = 4096
+        DEFAULT_MAX_SEQS = 4
+        DEFAULT_WORKERS = 8
+    elif total_vram_gb >= 20:  # RTX 4090/3090
+        DEFAULT_GPU_MEM = 0.40
+        DEFAULT_MAX_LEN = 2048
+        DEFAULT_MAX_SEQS = 2
+        DEFAULT_WORKERS = 4
+    else:
+        raise RuntimeError(f"GPU has only {total_vram_gb:.1f}GB VRAM. Minimum 20GB required.")
+else:
+    raise RuntimeError("No CUDA GPU available!")
+
+# Allow environment variable overrides
+GPU_MEMORY_UTILIZATION = float(os.getenv('GPU_MEMORY_UTILIZATION', str(DEFAULT_GPU_MEM)))
+MAX_MODEL_LEN = int(os.getenv('MAX_MODEL_LEN', str(DEFAULT_MAX_LEN)))
+MAX_CONCURRENCY = int(os.getenv('MAX_CONCURRENCY', str(DEFAULT_MAX_SEQS)))
+NUM_WORKERS = int(os.getenv('NUM_WORKERS', str(DEFAULT_WORKERS)))
 
 PROMPT = '<image>\n<|grounding|>Convert the document to markdown.'
 
@@ -44,23 +72,35 @@ PROMPT = '<image>\n<|grounding|>Convert the document to markdown.'
 ModelRegistry.register_model("DeepseekOCR2ForCausalLM", DeepseekOCR2ForCausalLM)
 
 # Initialize model globally (load once, use many times)
+print("=" * 60)
 print("Loading DeepSeek-OCR-2 model...")
-print(f"VLLM_USE_V1={os.environ.get('VLLM_USE_V1', 'not set')}")
+print("=" * 60)
+print(f"Configuration:")
+print(f"  GPU_MEMORY_UTILIZATION: {GPU_MEMORY_UTILIZATION}")
+print(f"  MAX_MODEL_LEN: {MAX_MODEL_LEN}")
+print(f"  MAX_CONCURRENCY: {MAX_CONCURRENCY}")
+print(f"  VLLM_USE_V1: {os.environ.get('VLLM_USE_V1', 'not set')}")
+
 llm = LLM(
     model=MODEL_PATH,
     hf_overrides={"architectures": ["DeepseekOCR2ForCausalLM"]},
-    block_size=256,
+    # Memory optimization settings - CRITICAL
+    gpu_memory_utilization=GPU_MEMORY_UTILIZATION,  # Leave room for vision encoder
+    max_model_len=MAX_MODEL_LEN,  # Reduced to lower KV cache memory
+    max_num_seqs=MAX_CONCURRENCY,  # Limit concurrent sequences
+    # Multimodal settings - CRITICAL for OOM prevention
+    limit_mm_per_prompt={"image": 1},  # Limit images per prompt during profiling
+    # Other settings
+    block_size=16,  # Smaller block size = less memory waste
     enforce_eager=True,  # Use eager mode for stability
     trust_remote_code=True,
-    max_model_len=MAX_MODEL_LEN,
     swap_space=0,
-    max_num_seqs=MAX_CONCURRENCY,
     tensor_parallel_size=1,
-    gpu_memory_utilization=GPU_MEMORY_UTILIZATION,
     disable_mm_preprocessor_cache=True,
     enable_prefix_caching=False,  # Disable for OCR (from official docs)
 )
 print("Model loaded successfully!")
+print("=" * 60)
 
 # Logits processors
 logits_processors = [
@@ -80,8 +120,8 @@ sampling_params = SamplingParams(
 )
 
 
-def pdf_to_images(pdf_bytes, dpi=144):
-    """Convert PDF bytes to PIL images"""
+def pdf_to_images(pdf_bytes, dpi=108):
+    """Convert PDF bytes to PIL images (reduced DPI for memory efficiency)"""
     images = []
     pdf_document = fitz.open(stream=pdf_bytes, filetype="pdf")
 

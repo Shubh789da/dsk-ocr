@@ -18,15 +18,17 @@ Test your DeepSeek-OCR-2 code directly on a RunPod GPU pod before building Docke
 - Click **"+ Deploy"** or **"New Pod"**
 
 ### 1.2 Select GPU
-Choose one of these (RTX 4090 recommended for testing):
-- **RTX 4090** (24GB) - ~$0.44/hr - Best value for testing
-- **A100 40GB** - ~$1.00/hr - More VRAM if needed
-- **L40S** (48GB) - ~$0.80/hr - Good alternative
+Choose one of these (H100 recommended for production):
+- **RTX 4090** (24GB) - ~$0.44/hr - Minimum viable, limited concurrency
+- **A100 40GB** - ~$1.00/hr - Good balance
+- **H100** (80GB) - Best for production with higher concurrency
 
 ### 1.3 Select Template
-Choose: **RunPod Pytorch 2.4.0** or **RunPod Pytorch 2.1**
-- This gives you CUDA, PyTorch pre-installed
-- Or use **vllm/vllm-openai:v0.8.5** as custom image
+Choose: **vllm/vllm-openai:v0.8.5** as custom image (RECOMMENDED)
+- This has the exact vLLM version needed
+- All CUDA dependencies pre-configured
+
+Or use **RunPod Pytorch 2.4.0** and install vLLM manually.
 
 ### 1.4 Configure Pod
 - **Container Disk**: 50GB (for model downloads)
@@ -50,28 +52,33 @@ Or use **Web Terminal** (click "Connect" → "Start Web Terminal")
 ```bash
 nvidia-smi
 ```
-You should see your GPU (RTX 4090, A100, etc.)
+You should see your GPU (RTX 4090, H100, etc.)
 
 ---
 
 ## Step 3: Set Up Environment
 
-### 3.1 Install vLLM v0.8.5 (Required Version)
+### 3.1 Check vLLM Version
 ```bash
-# Install vLLM 0.8.5 specifically
-pip3.12 install vllm==0.8.5
-
-# Verify version
+# If using vllm-openai:v0.8.5 image, verify:
 python3.12 -c "import vllm; print(vllm.__version__)"
 # Should print: 0.8.5
 ```
 
-### 3.2 Install Other Dependencies
+### 3.2 Install vLLM v0.8.5 (if not using vllm image)
+```bash
+pip3.12 install vllm==0.8.5
+
+# Verify version
+python3.12 -c "import vllm; print(vllm.__version__)"
+```
+
+### 3.3 Install Other Dependencies
 ```bash
 pip3.12 install runpod transformers tokenizers Pillow PyMuPDF torchvision einops addict easydict numpy requests tqdm
 ```
 
-### 3.3 Clone/Upload Your Code
+### 3.4 Clone/Upload Your Code
 
 **Option A: Clone from GitHub**
 ```bash
@@ -99,81 +106,128 @@ cd /workspace/dsk-ep
 ls -la
 ```
 
-### 4.2 Test Imports First
+### 4.2 Run the Test Script (RECOMMENDED)
 ```bash
-python3.12 -c "
-import torch
-print(f'PyTorch: {torch.__version__}')
-print(f'CUDA available: {torch.cuda.is_available()}')
-print(f'GPU: {torch.cuda.get_device_name(0)}')
-
-import vllm
-print(f'vLLM: {vllm.__version__}')
-
-from vllm.multimodal.processing import BaseMultiModalProcessor, PromptUpdate
-print('vLLM multimodal imports OK')
-"
+# This auto-detects GPU and configures memory settings
+python3.12 test_model.py
 ```
 
-### 4.3 Test Model Loading
-```bash
-python3.12 -c "
-from vllm import LLM
-from vllm.model_executor.models.registry import ModelRegistry
-from deepseek_ocr2 import DeepseekOCR2ForCausalLM
+Expected output for H100:
+```
+============================================================
+DeepSeek-OCR-2 Test Script
+============================================================
 
-# Register model
-ModelRegistry.register_model('DeepseekOCR2ForCausalLM', DeepseekOCR2ForCausalLM)
+PyTorch: 2.6.0+cu124
+CUDA available: True
+GPU: NVIDIA H100 80GB HBM3
+VRAM: 85.0 GB
 
-print('Loading model...')
-llm = LLM(
-    model='deepseek-ai/DeepSeek-OCR-2',
-    hf_overrides={'architectures': ['DeepseekOCR2ForCausalLM']},
-    trust_remote_code=True,
-    max_model_len=4096,
-    gpu_memory_utilization=0.9
-)
-print('Model loaded successfully!')
-"
+[AUTO-CONFIG] High-VRAM GPU detected, using moderate settings
+
+VLLM_USE_V1: 0
+VLLM_ATTENTION_BACKEND: XFORMERS
+PYTORCH_CUDA_ALLOC_CONF: expandable_segments:True
+
+Importing vLLM...
+vLLM version: 0.8.5
+...
+Configuration:
+  MODEL_PATH: deepseek-ai/DeepSeek-OCR-2
+  GPU_MEMORY_UTILIZATION: 0.5
+  MAX_MODEL_LEN: 4096
+  MAX_NUM_SEQS: 4
+
+============================================================
+Loading model (this may take a few minutes)...
+============================================================
+...
+[SUCCESS] Model loaded successfully!
 ```
 
-### 4.4 Test with a Sample PDF
-Upload a test PDF to the pod:
+### 4.3 Test with a Sample PDF
 ```bash
-# From local machine
-scp -P <port> /path/to/test.pdf root@<pod-ip>:/workspace/dsk-ep/
+# Upload a test PDF to the pod first:
+# scp -P <port> /path/to/test.pdf root@<pod-ip>:/workspace/dsk-ep/
 
-# On the pod, run test
-cd /workspace/dsk-ep
-python3.12 handler.py /workspace/dsk-ep/test.pdf
-```
-
-### 4.5 Test Full Handler (Interactive)
-```bash
-python3.12 -c "
-import base64
-from handler import process_pdf
-
-# Read a test PDF
-with open('/workspace/dsk-ep/test.pdf', 'rb') as f:
-    pdf_bytes = f.read()
-
-print(f'PDF size: {len(pdf_bytes)} bytes')
-print('Processing...')
-
-result = process_pdf(pdf_bytes)
-
-print('=' * 60)
-print('INDICATIONS AND USAGE:')
-print('=' * 60)
-print(result['indications_and_usage'][:2000])
-print(f'\\nPages: {result[\"page_count\"]}')
-"
+# Run test with PDF
+python3.12 test_model.py /workspace/dsk-ep/test.pdf
 ```
 
 ---
 
-## Step 5: Debug Common Issues
+## Step 5: Memory Configuration Reference
+
+### Auto-Configured Settings by GPU
+
+| GPU | VRAM | gpu_memory_utilization | max_model_len | max_num_seqs |
+|-----|------|------------------------|---------------|--------------|
+| RTX 4090 | 24GB | 0.40 | 2048 | 1 |
+| A100 40GB | 40GB | 0.45 | 4096 | 2 |
+| H100 80GB | 80GB | 0.50 | 4096 | 4 |
+
+### Manual Override (if needed)
+```bash
+# For very conservative settings (if still OOM):
+export GPU_MEMORY_UTILIZATION=0.35
+export MAX_MODEL_LEN=1024
+export MAX_NUM_SEQS=1
+
+python3.12 test_model.py
+```
+
+### Why These Settings Matter
+
+1. **gpu_memory_utilization** (0.40-0.50):
+   - vLLM pre-allocates this % of VRAM for KV cache
+   - DeepSeek-OCR-2 needs ~6-7GB for model + 2-4GB for vision encoder activations
+   - Setting too high leaves no room for vision encoder → OOM during profile_run
+
+2. **max_model_len** (2048-4096):
+   - Maximum sequence length
+   - Directly affects KV cache size
+   - Lower = less memory, but limits output length
+
+3. **max_num_seqs** (1-8):
+   - Maximum concurrent sequences
+   - Each sequence needs KV cache space
+   - Lower = less memory, but limits throughput
+
+4. **limit_mm_per_prompt={"image": 1}**:
+   - Limits multimodal inputs during profiling
+   - CRITICAL for preventing OOM during vLLM's profile run
+
+---
+
+## Step 6: Debug Common Issues
+
+### Issue: CUDA out of memory during model loading
+This is the most common issue! The script now auto-configures, but if still failing:
+
+```bash
+# Try ultra-conservative settings
+export GPU_MEMORY_UTILIZATION=0.30
+export MAX_MODEL_LEN=1024
+export MAX_NUM_SEQS=1
+
+# Check for other GPU processes
+nvidia-smi
+
+# Kill any zombie processes
+pkill -f python
+
+python3.12 test_model.py
+```
+
+### Issue: OOM during profile_run phase
+The log shows:
+```
+INFO ... Model loading took 6.3336 GiB
+[ERROR] CUDA out of memory. Tried to allocate 32.00 MiB...
+```
+
+This means KV cache pre-allocation + vision encoder = too much.
+**Solution**: Lower `gpu_memory_utilization` to leave room for vision encoder.
 
 ### Issue: Module not found
 ```bash
@@ -184,14 +238,17 @@ pip3.12 list | grep -i <module_name>
 pip3.12 install <module_name>
 ```
 
-### Issue: CUDA out of memory
-```bash
-# Reduce GPU memory usage
-export GPU_MEMORY_UTILIZATION=0.8
-
-# Or reduce max_model_len
-export MAX_MODEL_LEN=4096
+### Issue: V1 engine being used (causes OOM)
+Check the log for:
 ```
+Initializing a V1 LLM engine  # BAD
+```
+Should show:
+```
+Initializing a V0 LLM engine  # GOOD
+```
+
+Fix: Ensure `VLLM_USE_V1=0` is set BEFORE any vLLM imports.
 
 ### Issue: Model download fails
 ```bash
@@ -202,21 +259,11 @@ export HF_TOKEN=your_token_here
 huggingface-cli login
 ```
 
-### Issue: vLLM version mismatch
-```bash
-# Check version
-pip3.12 show vllm
-
-# Force reinstall correct version
-pip3.12 uninstall vllm -y
-pip3.12 install vllm==0.8.5
-```
-
 ---
 
-## Step 6: Once Working, Build Docker Image
+## Step 7: Once Working, Build Docker Image
 
-### 6.1 On the Same Pod (Recommended)
+### 7.1 On the Same Pod (Recommended)
 ```bash
 # Install Docker (if not available)
 curl -fsSL https://get.docker.com | sh
@@ -225,36 +272,34 @@ curl -fsSL https://get.docker.com | sh
 cd /workspace/dsk-ep
 
 # Build image
-docker build -t shubh0078/dsk-ocr-endpoint:v1.2 .
+docker build -t shubh0078/dsk-ocr-endpoint:v1.3 .
 
 # Login to Docker Hub
 docker login
 
 # Push image
-docker push shubh0078/dsk-ocr-endpoint:v1.2
+docker push shubh0078/dsk-ocr-endpoint:v1.3
 ```
 
-### 6.2 Update Dockerfile with Working Versions
+### 7.2 Update Dockerfile with Working Versions
 After testing, note the exact versions that worked:
 ```bash
 pip3.12 freeze > working_versions.txt
 cat working_versions.txt
 ```
 
-Then update `requirements.txt` with pinned versions.
-
 ---
 
-## Step 7: Deploy to Serverless
+## Step 8: Deploy to Serverless
 
 Once Docker image is pushed:
 
 1. Go to [RunPod Serverless](https://www.runpod.io/console/serverless)
 2. Click **New Endpoint**
 3. Select **Docker Image**
-4. Enter: `docker.io/shubh0078/dsk-ocr-endpoint:v1.2`
+4. Enter: `docker.io/shubh0078/dsk-ocr-endpoint:v1.3`
 5. Configure:
-   - GPU: RTX 4090
+   - GPU: H100 80GB (recommended) or RTX 4090
    - Min Workers: 0
    - Max Workers: 3
    - Idle Timeout: 60s
@@ -277,8 +322,11 @@ python3.12 -c "import vllm; print(vllm.__version__)"
 # Test imports
 python3.12 -c "from deepseek_ocr2 import DeepseekOCR2ForCausalLM; print('OK')"
 
-# Run handler with test PDF
-python3.12 handler.py test.pdf
+# Run test script (auto-configures memory)
+python3.12 test_model.py
+
+# Run with PDF
+python3.12 test_model.py test.pdf
 
 # Monitor GPU usage (live)
 watch -n 1 nvidia-smi
@@ -288,19 +336,36 @@ df -h
 
 # Download test PDF from URL
 wget -O test.pdf "https://example.com/label.pdf"
+
+# Manual memory override
+export GPU_MEMORY_UTILIZATION=0.35
+export MAX_MODEL_LEN=1024
+python3.12 test_model.py
 ```
 
 ---
 
-## Cost Estimate
+## Memory Troubleshooting Flowchart
 
-| Activity | GPU | Hourly Cost | Typical Duration |
-|----------|-----|-------------|------------------|
-| Testing/debugging | RTX 4090 | $0.44/hr | 1-2 hours |
-| Docker build | RTX 4090 | $0.44/hr | 10-30 min |
-| **Total** | | | **~$1-2** |
-
-**Tip**: Stop your pod when not using it to save costs!
+```
+OOM Error?
+    │
+    ├─→ During "profile_run" or "KV cache"?
+    │       │
+    │       └─→ Lower GPU_MEMORY_UTILIZATION (try 0.35)
+    │           Lower MAX_MODEL_LEN (try 1024)
+    │           Lower MAX_NUM_SEQS (try 1)
+    │
+    ├─→ During model weight loading?
+    │       │
+    │       └─→ GPU too small (need 20GB+ minimum)
+    │           Check nvidia-smi for other processes
+    │
+    └─→ During inference?
+            │
+            └─→ Image too large? Reduce DPI
+                Batch too big? Process fewer pages
+```
 
 ---
 
@@ -310,6 +375,7 @@ Make sure these files exist in `/workspace/dsk-ep/`:
 ```
 dsk-ep/
 ├── handler.py
+├── test_model.py
 ├── extraction.py
 ├── config.py
 ├── deepseek_ocr2.py
