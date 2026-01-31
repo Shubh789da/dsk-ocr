@@ -172,22 +172,45 @@ def clean_ocr_output(text):
 
 # Test inference with a simple image if PDF provided
 if len(sys.argv) > 1:
-    pdf_path = sys.argv[1]
+    input_path = sys.argv[1]
+    
+    # Check if input is URL or local file
+    is_url = input_path.lower().startswith(('http://', 'https://'))
+    
     print(f"\n" + "=" * 60)
-    print(f"Testing with PDF: {pdf_path}")
+    if is_url:
+        print(f"Downloading PDF from URL: {input_path}")
+    else:
+        print(f"Testing with PDF: {input_path}")
     print("=" * 60)
 
     import fitz
     from PIL import Image
     import io
+    import requests
 
     # Start timing for PDF processing
     pdf_start_time = time.time()
 
-    # Open PDF and get total page count
-    pdf_doc = fitz.open(pdf_path)
-    total_pages = len(pdf_doc)
-    print(f"Total pages in PDF: {total_pages}")
+    try:
+        if is_url:
+            response = requests.get(input_path, timeout=120)  # Increased timeout for large files
+            response.raise_for_status()
+            pdf_bytes = response.content
+            # Open PDF from bytes
+            pdf_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+            pdf_filename = input_path.split('/')[-1] or "downloaded.pdf"
+        else:
+            # Open local file
+            pdf_doc = fitz.open(input_path)
+            pdf_filename = os.path.basename(input_path)
+            
+        total_pages = len(pdf_doc)
+        print(f"Total pages in PDF: {total_pages}")
+        
+    except Exception as e:
+        print(f"\n[ERROR] Failed to open/download PDF: {e}")
+        sys.exit(1)
 
     # Prepare processor and sampling params (reusable for all pages)
     PROMPT = '<image>\n<|grounding|>Convert the document to markdown.'
@@ -287,9 +310,18 @@ if len(sys.argv) > 1:
     print(f"Total time: {model_load_time + total_pdf_time:.1f} seconds")
 
     # Save full output to file
-    output_file = pdf_path.replace('.pdf', '_ocr_output.md')
+    # Save full output to file
+    if is_url:
+        base_name = pdf_filename
+        if not base_name.endswith('.pdf'):
+            base_name += '.pdf'
+    else:
+        base_name = os.path.basename(input_path)
+
+    output_file = base_name.replace('.pdf', '_ocr_output.md')
+    
     with open(output_file, 'w', encoding='utf-8') as f:
-        f.write(f"# OCR Output for {os.path.basename(pdf_path)}\n\n")
+        f.write(f"# OCR Output for {base_name}\n\n")
         f.write(f"- Pages: {total_pages}\n")
         f.write(f"- Total chars: {len(combined_output)}\n")
         f.write(f"- Processing time: {total_pdf_time:.1f}s\n")
