@@ -109,10 +109,12 @@ class DeepseekOCR2ProcessingInfo(BaseProcessingInfo):
         return global_views_tokens + local_views_tokens + 1
 
     def get_image_size_with_most_features(self) -> ImageSize:
-
+        # NOTE: Original values (2048x2048, 1536x1536) cause OOM during profiling
+        # Reduced to prevent memory exhaustion during vLLM's dummy run phase
+        # This affects profiling only, not actual inference quality
         if IMAGE_SIZE == 1024 and BASE_SIZE == 1280:
-            return ImageSize(width=1024*2, height=1024*2)
-        return ImageSize(width=768*2, height=768*2)
+            return ImageSize(width=1024, height=1024)  # Was 2048x2048
+        return ImageSize(width=768, height=768)  # Was 1536x1536
 
 
 class DeepseekOCR2DummyInputsBuilder(

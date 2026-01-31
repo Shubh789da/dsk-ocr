@@ -39,20 +39,20 @@ if torch.cuda.is_available():
     #   - KV cache (variable, controlled by gpu_memory_utilization)
 
     if total_vram_gb >= 70:  # H100/A100 80GB
-        GPU_MEMORY_UTILIZATION = 0.50  # Use only 50% for KV cache, leave room for vision
-        MAX_MODEL_LEN = 4096
-        MAX_NUM_SEQS = 4
-        print(f"\n[AUTO-CONFIG] High-VRAM GPU detected, using moderate settings")
-    elif total_vram_gb >= 40:  # A100 40GB / A6000
-        GPU_MEMORY_UTILIZATION = 0.45
-        MAX_MODEL_LEN = 4096
+        GPU_MEMORY_UTILIZATION = 0.35  # Conservative: leave room for vision encoder (4GB)
+        MAX_MODEL_LEN = 2048
         MAX_NUM_SEQS = 2
-        print(f"\n[AUTO-CONFIG] Medium-VRAM GPU detected")
-    elif total_vram_gb >= 20:  # RTX 4090 / 3090
-        GPU_MEMORY_UTILIZATION = 0.40  # Very conservative for 24GB cards
+        print(f"\n[AUTO-CONFIG] High-VRAM GPU detected, using conservative settings")
+    elif total_vram_gb >= 40:  # A100 40GB / A6000
+        GPU_MEMORY_UTILIZATION = 0.35
         MAX_MODEL_LEN = 2048
         MAX_NUM_SEQS = 1
-        print(f"\n[AUTO-CONFIG] Consumer GPU detected, using conservative settings")
+        print(f"\n[AUTO-CONFIG] Medium-VRAM GPU detected")
+    elif total_vram_gb >= 20:  # RTX 4090 / 3090
+        GPU_MEMORY_UTILIZATION = 0.30  # Very conservative for 24GB cards
+        MAX_MODEL_LEN = 1024
+        MAX_NUM_SEQS = 1
+        print(f"\n[AUTO-CONFIG] Consumer GPU detected, using very conservative settings")
     else:
         print(f"\n[ERROR] GPU has only {total_vram_gb:.1f}GB VRAM.")
         print("        DeepSeek-OCR-2 requires at least 20GB VRAM.")

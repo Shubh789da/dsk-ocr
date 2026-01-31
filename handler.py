@@ -41,20 +41,20 @@ if torch.cuda.is_available():
     print(f"Detected GPU: {torch.cuda.get_device_name(0)} with {total_vram_gb:.1f}GB VRAM")
 
     if total_vram_gb >= 70:  # H100/A100 80GB
-        DEFAULT_GPU_MEM = 0.50
-        DEFAULT_MAX_LEN = 4096
-        DEFAULT_MAX_SEQS = 8
-        DEFAULT_WORKERS = 16
-    elif total_vram_gb >= 40:  # A100 40GB
-        DEFAULT_GPU_MEM = 0.45
-        DEFAULT_MAX_LEN = 4096
-        DEFAULT_MAX_SEQS = 4
-        DEFAULT_WORKERS = 8
-    elif total_vram_gb >= 20:  # RTX 4090/3090
-        DEFAULT_GPU_MEM = 0.40
+        DEFAULT_GPU_MEM = 0.35  # Conservative: leave room for vision encoder
         DEFAULT_MAX_LEN = 2048
         DEFAULT_MAX_SEQS = 2
         DEFAULT_WORKERS = 4
+    elif total_vram_gb >= 40:  # A100 40GB
+        DEFAULT_GPU_MEM = 0.35
+        DEFAULT_MAX_LEN = 2048
+        DEFAULT_MAX_SEQS = 1
+        DEFAULT_WORKERS = 2
+    elif total_vram_gb >= 20:  # RTX 4090/3090
+        DEFAULT_GPU_MEM = 0.30  # Very conservative for 24GB
+        DEFAULT_MAX_LEN = 1024
+        DEFAULT_MAX_SEQS = 1
+        DEFAULT_WORKERS = 2
     else:
         raise RuntimeError(f"GPU has only {total_vram_gb:.1f}GB VRAM. Minimum 20GB required.")
 else:

@@ -73,12 +73,31 @@ pip3.12 install vllm==0.8.5
 python3.12 -c "import vllm; print(vllm.__version__)"
 ```
 
-### 3.3 Install Other Dependencies
-```bash
-pip3.12 install runpod transformers tokenizers Pillow PyMuPDF torchvision einops addict easydict numpy requests tqdm
+### 3.3 Fix Tokenizer Version (CRITICAL!)
+The vLLM base image has incompatible transformers/tokenizers versions. You'll get this error without the fix:
+```
+AttributeError: TokenizersBackend has no attribute all_special_tokens_extended
 ```
 
-### 3.4 Clone/Upload Your Code
+**Run this FIRST:**
+```bash
+# CRITICAL: Force install exact versions that work with DeepSeek-OCR-2
+pip3.12 install --force-reinstall transformers==4.46.3 tokenizers==0.20.3
+
+# Verify versions
+python3.12 -c "import transformers; print(f'transformers: {transformers.__version__}')"
+# Should print: transformers: 4.46.3
+
+python3.12 -c "import tokenizers; print(f'tokenizers: {tokenizers.__version__}')"
+# Should print: tokenizers: 0.20.3
+```
+
+### 3.4 Install Other Dependencies
+```bash
+pip3.12 install runpod Pillow PyMuPDF torchvision einops addict easydict numpy requests tqdm
+```
+
+### 3.5 Clone/Upload Your Code
 
 **Option A: Clone from GitHub**
 ```bash
@@ -200,6 +219,18 @@ python3.12 test_model.py
 ---
 
 ## Step 6: Debug Common Issues
+
+### Issue: TokenizersBackend has no attribute all_special_tokens_extended
+```
+AttributeError: TokenizersBackend has no attribute all_special_tokens_extended
+```
+
+**This is the most common issue!** The vLLM base image has incompatible versions.
+
+**Fix:**
+```bash
+pip3.12 install --force-reinstall transformers==4.46.3 tokenizers==0.20.3
+```
 
 ### Issue: CUDA out of memory during model loading
 This is the most common issue! The script now auto-configures, but if still failing:

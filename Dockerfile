@@ -12,6 +12,8 @@ WORKDIR /app
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     VLLM_USE_V1=0 \
+    VLLM_ATTENTION_BACKEND=XFORMERS \
+    PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
     MODEL_PATH=deepseek-ai/DeepSeek-OCR-2 \
     HF_HOME=/app/hf_cache \
     TRANSFORMERS_CACHE=/app/hf_cache
@@ -22,10 +24,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
+# CRITICAL: Force install exact transformers/tokenizers versions FIRST
+# The base vLLM image has newer versions that break DeepSeek-OCR-2 tokenizer
+# Error without this: "TokenizersBackend has no attribute all_special_tokens_extended"
+RUN pip install --no-cache-dir --force-reinstall \
+    transformers==4.46.3 \
+    tokenizers==0.20.3
+
+# Install other Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
     pip install --no-cache-dir -r requirements.txt
+
+# Verify correct versions installed
+RUN python3 -c "import transformers; print(f'transformers: {transformers.__version__}')" && \
+    python3 -c "import tokenizers; print(f'tokenizers: {tokenizers.__version__}')"
 
 # Install flash-attention (requires GPU for compilation - will be built on first run if needed)
 # Flash attention is already included in the base image

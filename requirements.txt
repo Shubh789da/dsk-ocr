@@ -1,17 +1,15 @@
 # Core dependencies
-# runpod>=1.6.0
-# vllm>=0.8.5
-# torch>=2.6.0
-# transformers>=4.46.3
-# tokenizers>=0.20.3
+# vLLM is installed from base image (v0.8.5)
 runpod>=1.6.0
-transformers>=4.46.3
-tokenizers>=0.20.3
+
+# CRITICAL: Pin exact versions for DeepSeek-OCR-2 compatibility
+# The tokenizer has issues with newer transformers versions
+transformers==4.46.3
+tokenizers==0.20.3
 
 # Image processing
 Pillow>=10.0.0
 PyMuPDF>=1.23.0
-# torchvision>=0.21.0
 torchvision
 
 # Model dependencies
@@ -24,5 +22,5 @@ numpy>=1.24.0
 requests>=2.31.0
 tqdm>=4.66.0
 
-# Flash attention (build from source on GPU)
+# Flash attention (optional, build from source on GPU)
 # flash-attn>=2.7.3
