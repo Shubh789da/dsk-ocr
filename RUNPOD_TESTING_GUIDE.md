@@ -269,6 +269,15 @@ pip3.12 list | grep -i <module_name>
 pip3.12 install <module_name>
 ```
 
+### Issue: xFormers not built with CUDA support
+```
+NotImplementedError: No operator found for `memory_efficient_attention_forward`
+xFormers wasn't build with CUDA support
+```
+
+**This is normal!** vLLM will auto-detect and use FLASH_ATTN or another backend.
+The code no longer forces XFORMERS backend - it auto-detects.
+
 ### Issue: V1 engine being used (causes OOM)
 Check the log for:
 ```

@@ -12,7 +12,6 @@ WORKDIR /app
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     VLLM_USE_V1=0 \
-    VLLM_ATTENTION_BACKEND=XFORMERS \
     PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
     MODEL_PATH=deepseek-ai/DeepSeek-OCR-2 \
     HF_HOME=/app/hf_cache \

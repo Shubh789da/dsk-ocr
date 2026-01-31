@@ -17,6 +17,8 @@ os.environ['VLLM_USE_V1'] = '0'  # Disable V1 engine (causes OOM with multimodal
 os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
 
 import sys
+import time
+import re
 import torch
 
 print("=" * 60)
@@ -51,7 +53,7 @@ if torch.cuda.is_available():
         print(f"\n[AUTO-CONFIG] Medium-VRAM GPU detected")
     elif total_vram_gb >= 20:  # RTX 4090 / 3090
         GPU_MEMORY_UTILIZATION = 0.30  # Very conservative for 24GB cards
-        MAX_MODEL_LEN = 1024
+        MAX_MODEL_LEN = 2048
         MAX_NUM_SEQS = 1
         print(f"\n[AUTO-CONFIG] Consumer GPU detected, using very conservative settings")
     else:
@@ -70,7 +72,7 @@ MODEL_PATH = os.getenv('MODEL_PATH', 'deepseek-ai/DeepSeek-OCR-2')
 
 # Check env vars
 print(f"\nVLLM_USE_V1: {os.environ.get('VLLM_USE_V1', 'NOT SET')}")
-print(f"VLLM_ATTENTION_BACKEND: {os.environ.get('VLLM_ATTENTION_BACKEND', 'NOT SET')}")
+print(f"VLLM_ATTENTION_BACKEND: {os.environ.get('VLLM_ATTENTION_BACKEND', 'auto-detect')}")
 print(f"PYTORCH_CUDA_ALLOC_CONF: {os.environ.get('PYTORCH_CUDA_ALLOC_CONF', 'NOT SET')}")
 
 # Now import vLLM
@@ -102,6 +104,8 @@ print("\n" + "=" * 60)
 print("Loading model (this may take a few minutes)...")
 print("=" * 60)
 
+model_load_start = time.time()
+
 try:
     llm = LLM(
         model=MODEL_PATH,
@@ -121,7 +125,8 @@ try:
         disable_mm_preprocessor_cache=True,
         enable_prefix_caching=False,  # Disable for OCR
     )
-    print("\n[SUCCESS] Model loaded successfully!")
+    model_load_time = time.time() - model_load_start
+    print(f"\n[SUCCESS] Model loaded successfully in {model_load_time:.1f} seconds!")
 
 except Exception as e:
     print(f"\n[ERROR] Failed to load model: {e}")
@@ -133,14 +138,37 @@ except Exception as e:
     print("TROUBLESHOOTING SUGGESTIONS:")
     print("=" * 60)
     print("1. Try lower GPU_MEMORY_UTILIZATION:")
-    print("   export GPU_MEMORY_UTILIZATION=0.35")
+    print("   export GPU_MEMORY_UTILIZATION=0.25")
     print("\n2. Try smaller MAX_MODEL_LEN:")
-    print("   export MAX_MODEL_LEN=1024")
+    print("   export MAX_MODEL_LEN=512")
     print("\n3. Check if other processes are using GPU memory:")
     print("   nvidia-smi")
     print("\n4. Try clearing GPU cache before running:")
     print("   torch.cuda.empty_cache()")
+    print("\n5. If xFormers error, it will auto-detect FLASH_ATTN or other backend")
     sys.exit(1)
+
+
+def clean_ocr_output(text):
+    """Clean OCR output by removing detection markers (same as handler.py)"""
+    # Remove ref/det tags
+    pattern = r'(<\|ref\|>(.*?)<\|/ref\|><\|det\|>(.*?)<\|/det\|>)'
+    matches = re.findall(pattern, text, re.DOTALL)
+
+    for match in matches:
+        if '<|ref|>image<|/ref|>' in match[0]:
+            text = text.replace(match[0], '')
+        else:
+            text = text.replace(match[0], '').replace('\\coloneqq', ':=').replace('\\eqqcolon', '=:')
+
+    # Remove end of sentence marker
+    text = text.replace('<｜end▁of▁sentence｜>', '')
+
+    # Clean up multiple newlines
+    text = re.sub(r'\n\n\n+', '\n\n', text)
+
+    return text.strip()
+
 
 # Test inference with a simple image if PDF provided
 if len(sys.argv) > 1:
@@ -153,6 +181,9 @@ if len(sys.argv) > 1:
     from PIL import Image
     import io
 
+    # Start timing for PDF processing
+    pdf_start_time = time.time()
+
     # Open PDF and get total page count
     pdf_doc = fitz.open(pdf_path)
     total_pages = len(pdf_doc)
@@ -163,7 +194,7 @@ if len(sys.argv) > 1:
     CROP_MODE = True
     processor = DeepseekOCR2Processor()
 
-    # Sampling params
+    # Sampling params (same as handler.py)
     logits_processors = [
         NoRepeatNGramLogitsProcessor(
             ngram_size=20,
@@ -174,28 +205,31 @@ if len(sys.argv) > 1:
 
     sampling_params = SamplingParams(
         temperature=0.0,
-        max_tokens=min(4096, MAX_MODEL_LEN),
+        max_tokens=MAX_MODEL_LEN,
         logits_processors=logits_processors,
         skip_special_tokens=False,
+        include_stop_str_in_output=True,  # Same as handler.py
     )
 
     # Process ALL pages
     all_outputs = []
+    page_times = []
+
     for page_num in range(total_pages):
+        page_start = time.time()
         print(f"\n{'='*60}")
         print(f"Processing page {page_num + 1}/{total_pages}...")
         print("=" * 60)
 
-        # Convert page to image
+        # Convert page to image (same DPI as handler.py: 108)
         page = pdf_doc[page_num]
-        # Use lower DPI to reduce memory usage
-        pixmap = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5))  # 108 DPI instead of 144
+        pixmap = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5))  # 108 DPI
         img_data = pixmap.tobytes("png")
         img = Image.open(io.BytesIO(img_data))
 
         print(f"Image size: {img.size}")
 
-        # Prepare input for this page
+        # Prepare input for this page (same structure as handler.py)
         batch_input = {
             "prompt": PROMPT,
             "multi_modal_data": {
@@ -209,20 +243,34 @@ if len(sys.argv) > 1:
         }
 
         # Run inference
+        inference_start = time.time()
         outputs = llm.generate([batch_input], sampling_params=sampling_params)
+        inference_time = time.time() - inference_start
+
         output_text = outputs[0].outputs[0].text
+
+        # Clean output (same as handler.py)
+        output_text = clean_ocr_output(output_text)
         all_outputs.append(output_text)
+
+        page_time = time.time() - page_start
+        page_times.append(page_time)
 
         print(f"\nPage {page_num + 1} OUTPUT (first 500 chars):")
         print("-" * 40)
-        print(output_text[:500])
+        print(output_text[:500] if output_text else "[Empty output]")
         print(f"... (Total: {len(output_text)} chars)")
+        print(f"Page processing time: {page_time:.2f}s (inference: {inference_time:.2f}s)")
 
         # Clear some memory between pages
         del img, pixmap, img_data, batch_input, outputs
         torch.cuda.empty_cache()
 
     pdf_doc.close()
+
+    # Calculate total time
+    total_pdf_time = time.time() - pdf_start_time
+    avg_page_time = sum(page_times) / len(page_times) if page_times else 0
 
     # Combine all outputs
     print("\n" + "=" * 60)
@@ -231,10 +279,22 @@ if len(sys.argv) > 1:
     combined_output = "\n\n--- PAGE BREAK ---\n\n".join(all_outputs)
     print(f"Total pages processed: {total_pages}")
     print(f"Total combined output: {len(combined_output)} chars")
+    print(f"\n--- TIMING ---")
+    print(f"Model load time: {model_load_time:.1f} seconds")
+    print(f"PDF processing time: {total_pdf_time:.1f} seconds")
+    print(f"Average per page: {avg_page_time:.2f} seconds")
+    print(f"Pages per minute: {60 / avg_page_time:.1f}" if avg_page_time > 0 else "N/A")
+    print(f"Total time: {model_load_time + total_pdf_time:.1f} seconds")
 
-    # Optionally save full output to file
+    # Save full output to file
     output_file = pdf_path.replace('.pdf', '_ocr_output.md')
     with open(output_file, 'w', encoding='utf-8') as f:
+        f.write(f"# OCR Output for {os.path.basename(pdf_path)}\n\n")
+        f.write(f"- Pages: {total_pages}\n")
+        f.write(f"- Total chars: {len(combined_output)}\n")
+        f.write(f"- Processing time: {total_pdf_time:.1f}s\n")
+        f.write(f"- Avg per page: {avg_page_time:.2f}s\n\n")
+        f.write("---\n\n")
         for i, page_output in enumerate(all_outputs):
             f.write(f"## Page {i + 1}\n\n")
             f.write(page_output)
@@ -243,6 +303,7 @@ if len(sys.argv) > 1:
 
 else:
     print("\n[INFO] No PDF provided. Model loaded successfully!")
+    print(f"       Model load time: {model_load_time:.1f} seconds")
     print("       Run with: python3.12 test_model.py /path/to/test.pdf")
 
 print("\n" + "=" * 60)

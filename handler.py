@@ -6,7 +6,8 @@ Extracts INDICATIONS AND USAGE from FDA pharmaceutical label PDFs
 # CRITICAL: Set environment variables FIRST, before ANY imports
 import os
 os.environ['VLLM_USE_V1'] = '0'  # Disable V1 engine (causes OOM with multimodal)
-os.environ['VLLM_ATTENTION_BACKEND'] = 'XFORMERS'  # Use xformers backend
+# Don't force XFORMERS - let vLLM auto-detect the best backend for the GPU
+# os.environ['VLLM_ATTENTION_BACKEND'] = 'XFORMERS'
 os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'  # Help with memory fragmentation
 
 import io
@@ -52,7 +53,7 @@ if torch.cuda.is_available():
         DEFAULT_WORKERS = 2
     elif total_vram_gb >= 20:  # RTX 4090/3090
         DEFAULT_GPU_MEM = 0.30  # Very conservative for 24GB
-        DEFAULT_MAX_LEN = 1024
+        DEFAULT_MAX_LEN = 2048
         DEFAULT_MAX_SEQS = 1
         DEFAULT_WORKERS = 2
     else:
