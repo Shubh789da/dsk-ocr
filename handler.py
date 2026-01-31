@@ -3,20 +3,21 @@ RunPod Serverless Handler for DeepSeek-OCR-2
 Extracts INDICATIONS AND USAGE from FDA pharmaceutical label PDFs
 """
 
+# CRITICAL: Set environment variables FIRST, before ANY imports
 import os
+os.environ['VLLM_USE_V1'] = '0'  # Disable V1 engine (causes OOM with multimodal)
+os.environ['VLLM_ATTENTION_BACKEND'] = 'XFORMERS'  # Use xformers backend
+
 import io
 import base64
 import tempfile
-import runpod
-
-# Set environment variables before importing vLLM
-os.environ['VLLM_USE_V1'] = '0'
 
 import torch
 import fitz  # PyMuPDF
 from PIL import Image
 from concurrent.futures import ThreadPoolExecutor
 
+# Now import vLLM (after env vars are set)
 from vllm import LLM, SamplingParams
 from vllm.model_executor.models.registry import ModelRegistry
 
@@ -26,12 +27,15 @@ from process.ngram_norepeat import NoRepeatNGramLogitsProcessor
 from process.image_process import DeepseekOCR2Processor
 from extraction import extract_indications_and_usage_fda, clean_ocr_artifacts
 
+# Import runpod AFTER vllm to avoid any conflicts
+import runpod
+
 # Configuration
 MODEL_PATH = os.getenv('MODEL_PATH', 'deepseek-ai/DeepSeek-OCR-2')
 MAX_CONCURRENCY = int(os.getenv('MAX_CONCURRENCY', '50'))
 NUM_WORKERS = int(os.getenv('NUM_WORKERS', '32'))
 CROP_MODE = os.getenv('CROP_MODE', 'True').lower() == 'true'
-GPU_MEMORY_UTILIZATION = float(os.getenv('GPU_MEMORY_UTILIZATION', '0.9'))
+GPU_MEMORY_UTILIZATION = float(os.getenv('GPU_MEMORY_UTILIZATION', '0.85'))  # Reduced from 0.9
 MAX_MODEL_LEN = int(os.getenv('MAX_MODEL_LEN', '8192'))
 
 PROMPT = '<image>\n<|grounding|>Convert the document to markdown.'
@@ -41,18 +45,20 @@ ModelRegistry.register_model("DeepseekOCR2ForCausalLM", DeepseekOCR2ForCausalLM)
 
 # Initialize model globally (load once, use many times)
 print("Loading DeepSeek-OCR-2 model...")
+print(f"VLLM_USE_V1={os.environ.get('VLLM_USE_V1', 'not set')}")
 llm = LLM(
     model=MODEL_PATH,
     hf_overrides={"architectures": ["DeepseekOCR2ForCausalLM"]},
     block_size=256,
-    enforce_eager=False,
+    enforce_eager=True,  # Use eager mode for stability
     trust_remote_code=True,
     max_model_len=MAX_MODEL_LEN,
     swap_space=0,
     max_num_seqs=MAX_CONCURRENCY,
     tensor_parallel_size=1,
     gpu_memory_utilization=GPU_MEMORY_UTILIZATION,
-    disable_mm_preprocessor_cache=True
+    disable_mm_preprocessor_cache=True,
+    enable_prefix_caching=False,  # Disable for OCR (from official docs)
 )
 print("Model loaded successfully!")
 
