@@ -40,6 +40,22 @@ def extract_indications_and_usage_fda(context: str) -> str:
         # Pattern 5: Generic catch-all
         (r'INDICATIONS?(?:\s+AND)?\s+USAGE?\s*:?\s*(.*?)(?=\n[A-Z\s]{10,}\n|DOSAGE|WARNINGS|\Z)',
          re.DOTALL | re.IGNORECASE),
+
+        # Pattern 6: Markdown header format (## or ### INDICATIONS)
+        (r'#{1,3}\s*INDICATIONS\s+AND\s+USAGE\s*\n(.*?)(?=#{1,3}\s+[A-Z]|\n\n#{1,3}\s|\Z)',
+         re.DOTALL | re.IGNORECASE),
+
+        # Pattern 7: Bold markdown format (**INDICATIONS AND USAGE**)
+        (r'\*\*INDICATIONS\s+AND\s+USAGE\*\*\s*\n?(.*?)(?=\*\*[A-Z]|#{1,3}\s|\Z)',
+         re.DOTALL | re.IGNORECASE),
+
+        # Pattern 8: Numbered markdown (1. INDICATIONS or **1** INDICATIONS)
+        (r'(?:\*\*)?1(?:\*\*)?[\.\)]\s*INDICATIONS\s+AND\s+USAGE\s*\n(.*?)(?=(?:\*\*)?2(?:\*\*)?[\.\)]|\Z)',
+         re.DOTALL | re.IGNORECASE),
+
+        # Pattern 9: Simple section with colon
+        (r'INDICATIONS\s+AND\s+USAGE\s*:\s*(.*?)(?=\n[A-Z\s]{10,}:|\n#{1,3}\s|\Z)',
+         re.DOTALL | re.IGNORECASE),
     ]
 
     for pattern, flags in patterns:
@@ -47,8 +63,27 @@ def extract_indications_and_usage_fda(context: str) -> str:
         if match:
             section = match.group(1).strip()
             # Filter out if too short (likely false positive)
-            if len(section) > 100:
+            if len(section) > 50:  # Lowered from 100 for markdown output
                 return section
+
+    # Fallback: Search for "indicated for" or "is indicated" patterns
+    fallback_patterns = [
+        r'([A-Z][a-z]+(?:\s+[A-Z]?[a-z]+)*)\s+is\s+(?:a\s+\w+\s+)?indicated\s+for\s+(.*?)(?:\.|(?=\n\n))',
+        r'(?:is\s+)?indicated\s+for\s+(?:the\s+)?treatment\s+of\s+(.*?)(?:\.|(?=\n\n))',
+        r'(?:is\s+)?indicated\s+(?:for|in|as)\s+(.*?)(?:\.|(?=\n\n))',
+    ]
+
+    for pattern in fallback_patterns:
+        matches = re.findall(pattern, context, re.DOTALL | re.IGNORECASE)
+        if matches:
+            # Combine all matches
+            if isinstance(matches[0], tuple):
+                results = [' '.join(m).strip() for m in matches]
+            else:
+                results = [m.strip() for m in matches]
+            combined = '\n'.join(results)
+            if len(combined) > 30:
+                return combined
 
     return ""
 

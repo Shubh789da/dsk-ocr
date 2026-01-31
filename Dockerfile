@@ -18,6 +18,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 # Install system dependencies
 # Includes dependencies for Python/pip and potential build tools
+# Install system dependencies
+# Includes dependencies for Python/pip and potential build tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
     software-properties-common \
     build-essential \
@@ -34,12 +36,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     liblzma-dev \
     tk-dev \
     uuid-dev \
-    && add-apt-repository ppa:deadsnakes/ppa \
-    && apt-get update \
-    && apt-get install -y \
+    && rm -rf /var/lib/apt/lists/*
+
+# Add Python PPA
+RUN add-apt-repository ppa:deadsnakes/ppa \
+    && apt-get update
+
+# Install Python 3.12
+RUN apt-get install -y --no-install-recommends \
     python3.12 \
     python3.12-dev \
-    python3.12-distutils \
+    python3.12-venv \
     && rm -rf /var/lib/apt/lists/*
 
 # Set Python 3.12 as default
@@ -84,9 +91,12 @@ COPY config.py .
 COPY extraction.py .
 COPY handler.py .
 COPY test_model.py .
+COPY start.sh .
 COPY process/ ./process/
 COPY deepencoderv2/ ./deepencoderv2/
 COPY deepseek_ocr2.py .
 
+RUN chmod +x /app/start.sh
+
 # Entrypoint
-ENTRYPOINT ["python3", "-u", "handler.py"]
+ENTRYPOINT ["/bin/bash", "/app/start.sh"]

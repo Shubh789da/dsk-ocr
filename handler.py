@@ -190,8 +190,18 @@ def process_pdf(pdf_bytes):
     Returns:
         dict with full_text, indications_and_usage, page_count
     """
+    # Debug: Check PDF page count before conversion
+    if os.getenv('DEBUG_OCR', '').lower() == 'true':
+        import fitz
+        temp_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        print(f"\n[DEBUG] PDF contains {len(temp_doc)} pages")
+        temp_doc.close()
+
     # Convert PDF to images
     images = pdf_to_images(pdf_bytes)
+
+    if os.getenv('DEBUG_OCR', '').lower() == 'true':
+        print(f"[DEBUG] Converted {len(images)} images from PDF")
 
     # Prepare batch inputs
     with ThreadPoolExecutor(max_workers=NUM_WORKERS) as executor:
@@ -214,8 +224,37 @@ def process_pdf(pdf_bytes):
     # Clean OCR artifacts
     full_text = clean_ocr_artifacts(full_text)
 
+    # Debug output if enabled
+    if os.getenv('DEBUG_OCR', '').lower() == 'true':
+        print(f"\n[DEBUG] Full OCR text length: {len(full_text)} chars")
+        print(f"[DEBUG] First 1000 chars of OCR output:")
+        print("-" * 40)
+        print(full_text[:1000])
+        print("-" * 40)
+
+        # Check if INDICATIONS appears in the text
+        upper_text = full_text.upper()
+        if 'INDICATIONS' in upper_text:
+            idx = upper_text.find('INDICATIONS')
+            print(f"\n[DEBUG] Found 'INDICATIONS' at character {idx}")
+            print(f"[DEBUG] Context (50 chars before, 300 after):")
+            print("-" * 40)
+            print(full_text[max(0, idx-50):idx+300])
+            print("-" * 40)
+        else:
+            print("\n[DEBUG] WARNING: 'INDICATIONS' not found in OCR output!")
+            print("[DEBUG] This explains why extraction returns empty.")
+
     # Extract INDICATIONS AND USAGE section
     indications = extract_indications_and_usage_fda(full_text)
+
+    if os.getenv('DEBUG_OCR', '').lower() == 'true':
+        print(f"\n[DEBUG] Extraction result: {len(indications)} chars")
+        if indications:
+            print(f"[DEBUG] Extracted text preview:")
+            print("-" * 40)
+            print(indications[:500])
+            print("-" * 40)
 
     return {
         "full_text": full_text,
