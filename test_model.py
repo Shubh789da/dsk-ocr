@@ -11,7 +11,8 @@ Usage:
 # CRITICAL: Set environment variables FIRST, before ANY imports
 import os
 os.environ['VLLM_USE_V1'] = '0'  # Disable V1 engine (causes OOM with multimodal)
-os.environ['VLLM_ATTENTION_BACKEND'] = 'XFORMERS'  # Use xformers backend
+# Don't force XFORMERS - let vLLM auto-detect the best backend
+# os.environ['VLLM_ATTENTION_BACKEND'] = 'XFORMERS'
 # Help with memory fragmentation
 os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
 
@@ -152,33 +153,15 @@ if len(sys.argv) > 1:
     from PIL import Image
     import io
 
-    # Convert first page to image
+    # Open PDF and get total page count
     pdf_doc = fitz.open(pdf_path)
-    page = pdf_doc[0]
-    # Use lower DPI to reduce memory usage
-    pixmap = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5))  # 108 DPI instead of 144
-    img_data = pixmap.tobytes("png")
-    img = Image.open(io.BytesIO(img_data))
-    pdf_doc.close()
+    total_pages = len(pdf_doc)
+    print(f"Total pages in PDF: {total_pages}")
 
-    print(f"Image size: {img.size}")
-
-    # Prepare input
+    # Prepare processor and sampling params (reusable for all pages)
     PROMPT = '<image>\n<|grounding|>Convert the document to markdown.'
     CROP_MODE = True
-
     processor = DeepseekOCR2Processor()
-    batch_input = {
-        "prompt": PROMPT,
-        "multi_modal_data": {
-            "image": processor.tokenize_with_images(
-                images=[img],
-                bos=True,
-                eos=True,
-                cropping=CROP_MODE
-            )
-        },
-    }
 
     # Sampling params
     logits_processors = [
@@ -196,15 +179,67 @@ if len(sys.argv) > 1:
         skip_special_tokens=False,
     )
 
-    print("Running inference on first page...")
-    outputs = llm.generate([batch_input], sampling_params=sampling_params)
+    # Process ALL pages
+    all_outputs = []
+    for page_num in range(total_pages):
+        print(f"\n{'='*60}")
+        print(f"Processing page {page_num + 1}/{total_pages}...")
+        print("=" * 60)
 
+        # Convert page to image
+        page = pdf_doc[page_num]
+        # Use lower DPI to reduce memory usage
+        pixmap = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5))  # 108 DPI instead of 144
+        img_data = pixmap.tobytes("png")
+        img = Image.open(io.BytesIO(img_data))
+
+        print(f"Image size: {img.size}")
+
+        # Prepare input for this page
+        batch_input = {
+            "prompt": PROMPT,
+            "multi_modal_data": {
+                "image": processor.tokenize_with_images(
+                    images=[img],
+                    bos=True,
+                    eos=True,
+                    cropping=CROP_MODE
+                )
+            },
+        }
+
+        # Run inference
+        outputs = llm.generate([batch_input], sampling_params=sampling_params)
+        output_text = outputs[0].outputs[0].text
+        all_outputs.append(output_text)
+
+        print(f"\nPage {page_num + 1} OUTPUT (first 500 chars):")
+        print("-" * 40)
+        print(output_text[:500])
+        print(f"... (Total: {len(output_text)} chars)")
+
+        # Clear some memory between pages
+        del img, pixmap, img_data, batch_input, outputs
+        torch.cuda.empty_cache()
+
+    pdf_doc.close()
+
+    # Combine all outputs
     print("\n" + "=" * 60)
-    print("OUTPUT (first 1000 chars):")
+    print("FULL DOCUMENT OUTPUT SUMMARY:")
     print("=" * 60)
-    output_text = outputs[0].outputs[0].text
-    print(output_text[:1000])
-    print(f"\n... (Total: {len(output_text)} chars)")
+    combined_output = "\n\n--- PAGE BREAK ---\n\n".join(all_outputs)
+    print(f"Total pages processed: {total_pages}")
+    print(f"Total combined output: {len(combined_output)} chars")
+
+    # Optionally save full output to file
+    output_file = pdf_path.replace('.pdf', '_ocr_output.md')
+    with open(output_file, 'w', encoding='utf-8') as f:
+        for i, page_output in enumerate(all_outputs):
+            f.write(f"## Page {i + 1}\n\n")
+            f.write(page_output)
+            f.write("\n\n---\n\n")
+    print(f"\nFull output saved to: {output_file}")
 
 else:
     print("\n[INFO] No PDF provided. Model loaded successfully!")
