@@ -26,6 +26,7 @@ env
 
 # Test files
 test_*.py
+!test_model.py
 tests/
 *.test.py
 
