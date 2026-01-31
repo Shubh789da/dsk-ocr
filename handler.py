@@ -232,18 +232,44 @@ def process_pdf(pdf_bytes):
         print(full_text[:1000])
         print("-" * 40)
 
-        # Check if INDICATIONS appears in the text
-        upper_text = full_text.upper()
-        if 'INDICATIONS' in upper_text:
-            idx = upper_text.find('INDICATIONS')
-            print(f"\n[DEBUG] Found 'INDICATIONS' at character {idx}")
-            print(f"[DEBUG] Context (50 chars before, 300 after):")
-            print("-" * 40)
-            print(full_text[max(0, idx-50):idx+300])
-            print("-" * 40)
-        else:
-            print("\n[DEBUG] WARNING: 'INDICATIONS' not found in OCR output!")
-            print("[DEBUG] This explains why extraction returns empty.")
+        # Check for section header (not just the word "INDICATIONS")
+        import re as re_debug
+
+        # Look for the actual section header patterns
+        section_patterns = [
+            r'---\s*INDICATIONS\s+AND\s+USAGE\s*---',  # FDA highlights format
+            r'##\s*---?\s*INDICATIONS\s+AND\s+USAGE',  # Markdown with optional dashes
+            r'\n\s*1\s+INDICATIONS\s+AND\s+USAGE',     # Numbered section
+            r'\n\s*INDICATIONS\s+AND\s+USAGE\s*\n',    # Standalone header
+        ]
+
+        found_section = False
+        for pattern in section_patterns:
+            match = re_debug.search(pattern, full_text, re_debug.IGNORECASE)
+            if match:
+                idx = match.start()
+                print(f"\n[DEBUG] Found section header matching pattern: {pattern}")
+                print(f"[DEBUG] Location: character {idx}")
+                print(f"[DEBUG] Context (50 chars before, 500 after):")
+                print("-" * 40)
+                print(full_text[max(0, idx-50):idx+500])
+                print("-" * 40)
+                found_section = True
+                break
+
+        if not found_section:
+            upper_text = full_text.upper()
+            if 'INDICATIONS' in upper_text:
+                idx = upper_text.find('INDICATIONS')
+                print(f"\n[DEBUG] WARNING: No section header found, but 'INDICATIONS' appears at char {idx}")
+                print(f"[DEBUG] This might be in a table or reference, not the actual section.")
+                print(f"[DEBUG] Context:")
+                print("-" * 40)
+                print(full_text[max(0, idx-50):idx+300])
+                print("-" * 40)
+            else:
+                print("\n[DEBUG] WARNING: 'INDICATIONS' not found anywhere in OCR output!")
+                print("[DEBUG] This explains why extraction returns empty.")
 
     # Extract INDICATIONS AND USAGE section
     indications = extract_indications_and_usage_fda(full_text)

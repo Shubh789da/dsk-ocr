@@ -21,40 +21,37 @@ def extract_indications_and_usage_fda(context: str) -> str:
 
     # Try multiple patterns in order of specificity
     patterns = [
-        # Pattern 1: FDA highlights format with --- markers
-        (r'---\s*INDICATIONS AND USAGE\s*---\s*(.*?)(?=---[A-Z]|DOSAGE AND ADMINISTRATION|FULL PRESCRIBING INFORMATION|\Z)',
-         re.DOTALL | re.MULTILINE),
-
-        # Pattern 2: Numbered section format (1 INDICATIONS AND USAGE)
-        (r'(?:^|\n)\s*1\s+INDICATIONS AND USAGE\s*(.*?)(?=\n\s*2\s+DOSAGE|\n\s*\d+\s+[A-Z]{5,}|\Z)',
-         re.DOTALL | re.MULTILINE),
-
-        # Pattern 3: Numbered with decimal (1.0 INDICATIONS AND USAGE)
-        (r'(?:^|\n)\s*1\.0?\s+INDICATIONS AND USAGE\s*(.*?)(?=\n\s*2\.|\Z)',
-         re.DOTALL | re.MULTILINE),
-
-        # Pattern 4: ALL CAPS header
-        (r'(?:^|\n)\s*INDICATIONS AND USAGE\s*\n(.*?)(?=\n\s*[A-Z\s]{15,}\n|\Z)',
-         re.DOTALL | re.MULTILINE),
-
-        # Pattern 5: Generic catch-all
-        (r'INDICATIONS?(?:\s+AND)?\s+USAGE?\s*:?\s*(.*?)(?=\n[A-Z\s]{10,}\n|DOSAGE|WARNINGS|\Z)',
+        # Pattern 1: Markdown header with --- markers (most specific for FDA highlights OCR)
+        # Matches: ## ---INDICATIONS AND USAGE ---
+        (r'#{1,3}\s*---\s*INDICATIONS\s+AND\s+USAGE\s*---?\s*\n(.*?)(?=#{1,3}\s*---?\s*DOSAGE|#{1,3}\s+DOSAGE|## DOSAGE|\Z)',
          re.DOTALL | re.IGNORECASE),
 
-        # Pattern 6: Markdown header format (## or ### INDICATIONS)
-        (r'#{1,3}\s*INDICATIONS\s+AND\s+USAGE\s*\n(.*?)(?=#{1,3}\s+[A-Z]|\n\n#{1,3}\s|\Z)',
+        # Pattern 2: Plain --- markers (original format)
+        (r'---\s*INDICATIONS\s+AND\s+USAGE\s*---\s*\n?(.*?)(?=---\s*DOSAGE|---\s*[A-Z]|DOSAGE AND ADMINISTRATION|\Z)',
          re.DOTALL | re.IGNORECASE),
 
-        # Pattern 7: Bold markdown format (**INDICATIONS AND USAGE**)
-        (r'\*\*INDICATIONS\s+AND\s+USAGE\*\*\s*\n?(.*?)(?=\*\*[A-Z]|#{1,3}\s|\Z)',
+        # Pattern 3: Markdown ## header without dashes
+        (r'##\s+INDICATIONS\s+AND\s+USAGE\s*\n(.*?)(?=##\s+DOSAGE|##\s+[A-Z]{5,}|\Z)',
          re.DOTALL | re.IGNORECASE),
 
-        # Pattern 8: Numbered markdown (1. INDICATIONS or **1** INDICATIONS)
-        (r'(?:\*\*)?1(?:\*\*)?[\.\)]\s*INDICATIONS\s+AND\s+USAGE\s*\n(.*?)(?=(?:\*\*)?2(?:\*\*)?[\.\)]|\Z)',
+        # Pattern 4: Numbered section format (1 INDICATIONS AND USAGE)
+        (r'(?:^|\n)\s*1\s+INDICATIONS\s+AND\s+USAGE\s*\n(.*?)(?=\n\s*2\s+DOSAGE|\n\s*\d+\s+[A-Z]{5,}|\Z)',
+         re.DOTALL | re.MULTILINE),
+
+        # Pattern 5: Numbered with decimal (1.0 INDICATIONS AND USAGE)
+        (r'(?:^|\n)\s*1\.0?\s+INDICATIONS\s+AND\s+USAGE\s*\n(.*?)(?=\n\s*2\.|\Z)',
+         re.DOTALL | re.MULTILINE),
+
+        # Pattern 6: ALL CAPS standalone header
+        (r'(?:^|\n)\s*INDICATIONS\s+AND\s+USAGE\s*\n(.*?)(?=\n\s*DOSAGE\s+AND\s+ADMINISTRATION|\n\s*[A-Z\s]{15,}\n|\Z)',
+         re.DOTALL | re.MULTILINE | re.IGNORECASE),
+
+        # Pattern 7: Bold markdown format
+        (r'\*\*INDICATIONS\s+AND\s+USAGE\*\*\s*\n?(.*?)(?=\*\*DOSAGE|\*\*[A-Z]|##\s|\Z)',
          re.DOTALL | re.IGNORECASE),
 
-        # Pattern 9: Simple section with colon
-        (r'INDICATIONS\s+AND\s+USAGE\s*:\s*(.*?)(?=\n[A-Z\s]{10,}:|\n#{1,3}\s|\Z)',
+        # Pattern 8: Numbered markdown (1. INDICATIONS)
+        (r'(?:\*\*)?1(?:\*\*)?[\.\)]\s*INDICATIONS\s+AND\s+USAGE\s*\n(.*?)(?=(?:\*\*)?2(?:\*\*)?[\.\)]|##\s+2|\Z)',
          re.DOTALL | re.IGNORECASE),
     ]
 
