@@ -21,6 +21,7 @@ easydict>=1.13
 numpy>=1.24.0
 requests>=2.31.0
 tqdm>=4.66.0
+boto3>=1.34.0
 
 # Flash attention (optional, build from source on GPU)
 # flash-attn>=2.7.3

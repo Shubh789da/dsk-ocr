@@ -6,13 +6,16 @@ Extracts INDICATIONS AND USAGE from FDA pharmaceutical label PDFs
 # CRITICAL: Set environment variables FIRST, before ANY imports
 import os
 os.environ['VLLM_USE_V1'] = '0'  # Disable V1 engine (causes OOM with multimodal)
+os.environ['TOKENIZERS_PARALLELISM'] = 'false'  # Prevent fork warning in serverless
 # Don't force XFORMERS - let vLLM auto-detect the best backend for the GPU
 # os.environ['VLLM_ATTENTION_BACKEND'] = 'XFORMERS'
 os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'  # Help with memory fragmentation
 
 import io
+import re
 import base64
 import tempfile
+import requests
 
 import torch
 import fitz  # PyMuPDF
@@ -31,6 +34,10 @@ from extraction import extract_indications_and_usage_fda, clean_ocr_artifacts
 
 # Import runpod AFTER vllm to avoid any conflicts
 import runpod
+
+# Import boto3 for S3 uploads
+import boto3
+from botocore.exceptions import ClientError
 
 # Configuration with auto-detection
 MODEL_PATH = os.getenv('MODEL_PATH', 'deepseek-ai/DeepSeek-OCR-2')
@@ -233,8 +240,6 @@ def process_pdf(pdf_bytes):
         print("-" * 40)
 
         # Check for section header (not just the word "INDICATIONS")
-        import re as re_debug
-
         # Look for the actual section header patterns
         section_patterns = [
             r'---\s*INDICATIONS\s+AND\s+USAGE\s*---',  # FDA highlights format
@@ -245,7 +250,7 @@ def process_pdf(pdf_bytes):
 
         found_section = False
         for pattern in section_patterns:
-            match = re_debug.search(pattern, full_text, re_debug.IGNORECASE)
+            match = re.search(pattern, full_text, re.IGNORECASE)
             if match:
                 idx = match.start()
                 print(f"\n[DEBUG] Found section header matching pattern: {pattern}")
@@ -289,6 +294,55 @@ def process_pdf(pdf_bytes):
     }
 
 
+def upload_to_s3(content, filename, content_type="text/markdown"):
+    """
+    Upload content to S3 bucket.
+    
+    Args:
+        content: String content to upload
+        filename: Name of the file (e.g., 'job123_full_text.md')
+        content_type: MIME type of the content
+    
+    Returns:
+        S3 URL if successful, None if failed
+    """
+    bucket_name = os.getenv('S3_BUCKET_NAME', 'deepseek-ocr-sy')
+    region = os.getenv('AWS_DEFAULT_REGION', 'ap-south-2')
+    
+    # Check if AWS credentials are available
+    aws_access_key = os.getenv('AWS_ACCESS_KEY_ID')
+    aws_secret_key = os.getenv('AWS_SECRET_ACCESS_KEY')
+    
+    if not aws_access_key or not aws_secret_key:
+        print("[S3] Warning: AWS credentials not configured, skipping S3 upload")
+        return None
+    
+    try:
+        s3_client = boto3.client(
+            's3',
+            region_name=region,
+            aws_access_key_id=aws_access_key,
+            aws_secret_access_key=aws_secret_key
+        )
+        
+        s3_client.put_object(
+            Bucket=bucket_name,
+            Key=filename,
+            Body=content.encode('utf-8'),
+            ContentType=content_type
+        )
+        
+        s3_url = f"s3://{bucket_name}/{filename}"
+        print(f"[S3] Uploaded: {s3_url}")
+        return s3_url
+        
+    except ClientError as e:
+        print(f"[S3] Error uploading to S3: {e}")
+        return None
+    except Exception as e:
+        print(f"[S3] Unexpected error: {e}")
+        return None
+
 def handler(job):
     """
     RunPod Serverless Handler
@@ -302,7 +356,8 @@ def handler(job):
 
             # Optional
             "return_full_text": false,  # If true, also return full OCR text
-            "extraction_only": true     # If true, only return indications (default)
+            "save_to_s3": false,        # If true, save outputs to S3 bucket
+            "filename_prefix": "doc"    # Optional prefix for S3 filenames
         }
     }
 
@@ -310,10 +365,13 @@ def handler(job):
     {
         "indications_and_usage": "<extracted text>",
         "page_count": 180,
-        "full_text": "<optional, if return_full_text=true>"
+        "full_text": "<optional, if return_full_text=true>",
+        "s3_full_text_url": "<optional, if save_to_s3=true>",
+        "s3_indications_url": "<optional, if save_to_s3=true>"
     }
     """
     job_input = job["input"]
+    job_id = job.get("id", "unknown")
 
     # Get PDF data
     pdf_bytes = None
@@ -327,9 +385,8 @@ def handler(job):
 
     elif "pdf_url" in job_input:
         # Download PDF from URL
-        import requests
         try:
-            response = requests.get(job_input["pdf_url"], timeout=60)
+            response = requests.get(job_input["pdf_url"], timeout=120)
             response.raise_for_status()
             pdf_bytes = response.content
         except Exception as e:
@@ -354,24 +411,56 @@ def handler(job):
     if job_input.get("return_full_text", False):
         response["full_text"] = result["full_text"]
 
+    # Upload to S3 if requested
+    if job_input.get("save_to_s3", False):
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        prefix = job_input.get("filename_prefix", job_id)
+        
+        # Upload full OCR text
+        full_text_filename = f"{prefix}_{timestamp}_full_text.md"
+        full_text_url = upload_to_s3(result["full_text"], full_text_filename)
+        if full_text_url:
+            response["s3_full_text_url"] = full_text_url
+        
+        # Upload indications section
+        if result["indications_and_usage"]:
+            indications_filename = f"{prefix}_{timestamp}_indications.md"
+            indications_url = upload_to_s3(result["indications_and_usage"], indications_filename)
+            if indications_url:
+                response["s3_indications_url"] = indications_url
+
     return response
 
 
 # For local testing
 if __name__ == "__main__":
-    # Test with a sample PDF
+    # Test with a sample PDF (file path or URL)
     import sys
     if len(sys.argv) > 1:
-        pdf_path = sys.argv[1]
-        with open(pdf_path, "rb") as f:
-            pdf_bytes = f.read()
+        input_path = sys.argv[1]
+
+        # Check if it's a URL or local file
+        if input_path.lower().startswith(('http://', 'https://')):
+            print(f"Downloading PDF from URL: {input_path}")
+            response = requests.get(input_path, timeout=120)
+            response.raise_for_status()
+            pdf_bytes = response.content
+            print(f"Downloaded {len(pdf_bytes):,} bytes")
+        else:
+            print(f"Reading local file: {input_path}")
+            with open(input_path, "rb") as f:
+                pdf_bytes = f.read()
 
         result = process_pdf(pdf_bytes)
         print("=" * 80)
         print("INDICATIONS AND USAGE:")
         print("=" * 80)
-        print(result["indications_and_usage"][:2000])
-        print(f"\n... (Total: {len(result['indications_and_usage'])} chars)")
+        if result["indications_and_usage"]:
+            print(result["indications_and_usage"][:2000])
+            print(f"\n... (Total: {len(result['indications_and_usage'])} chars)")
+        else:
+            print("(No content extracted)")
         print(f"\nProcessed {result['page_count']} pages")
     else:
         # Start RunPod serverless

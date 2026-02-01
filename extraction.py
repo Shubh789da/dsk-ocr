@@ -11,47 +11,53 @@ def extract_indications_and_usage_fda(context: str) -> str:
     """
     Extract INDICATIONS AND USAGE section from FDA pharmaceutical labels.
     Handles multiple FDA label formats.
-
+    
     Args:
         context: Full pharmaceutical label text
-
+        
     Returns:
         Extracted INDICATIONS AND USAGE section text
     """
+    
+    # Define robust stop patterns (next major sections)
+    # We look for Section 2 (Dosage), Section 3 (Dosage Forms), or Section 4 (Contraindications)
+    # or just the section names themselves.
+    stop_patterns = [
+        r'DOSAGE\s+AND\s+ADMINISTRATION',
+        r'DOSAGE\s+FORMS\s+AND\s+STRENGTHS',
+        r'CONTRAINDICATIONS',
+        r'WARNINGS\s+AND\s+PRECAUTIONS',
+        r'BOXED\s+WARNING'
+    ]
+    
+    # Create the lookahead regex part: (?=\n\s*(?:2\.|2\s|DOSAGE...)...)
+    # We account for optonal numbers (2, 2., 2.0)
+    stop_regex = r'(?:\n\s*(?:(?:2|3|4|5)\.?\s*)?(?:' + '|'.join(stop_patterns) + r')|\Z)'
 
     # Try multiple patterns in order of specificity
     patterns = [
-        # Pattern 1: Markdown header with --- markers (most specific for FDA highlights OCR)
-        # Matches: ## ---INDICATIONS AND USAGE ---
-        (r'#{1,3}\s*---\s*INDICATIONS\s+AND\s+USAGE\s*---?\s*\n(.*?)(?=#{1,3}\s*---?\s*DOSAGE|#{1,3}\s+DOSAGE|## DOSAGE|\Z)',
+        # Pattern 1: Markdown header with --- markers (matches: ## ---INDICATIONS AND USAGE ---)
+        (r'#{1,3}\s*---\s*INDICATIONS\s+AND\s+USAGE\s*---?\s*\n(.*?)(?=' + r'(?:\n\s*#{1,3}\s*---?\s*(?:DOSAGE|CONTRAINDICATIONS))' + r'|' + stop_regex + r')',
          re.DOTALL | re.IGNORECASE),
 
         # Pattern 2: Plain --- markers (original format)
-        (r'---\s*INDICATIONS\s+AND\s+USAGE\s*---\s*\n?(.*?)(?=---\s*DOSAGE|---\s*[A-Z]|DOSAGE AND ADMINISTRATION|\Z)',
+        (r'---\s*INDICATIONS\s+AND\s+USAGE\s*---\s*\n?(.*?)(?=' + r'(?:\n\s*---\s*(?:DOSAGE|CONTRAINDICATIONS))' + r'|' + stop_regex + r')',
          re.DOTALL | re.IGNORECASE),
 
         # Pattern 3: Markdown ## header without dashes
-        (r'##\s+INDICATIONS\s+AND\s+USAGE\s*\n(.*?)(?=##\s+DOSAGE|##\s+[A-Z]{5,}|\Z)',
+        (r'##\s+INDICATIONS\s+AND\s+USAGE\s*\n(.*?)(?=' + r'(?:\n\s*##\s+(?:DOSAGE|CONTRAINDICATIONS))' + r'|' + stop_regex + r')',
          re.DOTALL | re.IGNORECASE),
 
         # Pattern 4: Numbered section format (1 INDICATIONS AND USAGE)
-        (r'(?:^|\n)\s*1\s+INDICATIONS\s+AND\s+USAGE\s*\n(.*?)(?=\n\s*2\s+DOSAGE|\n\s*\d+\s+[A-Z]{5,}|\Z)',
-         re.DOTALL | re.MULTILINE),
-
-        # Pattern 5: Numbered with decimal (1.0 INDICATIONS AND USAGE)
-        (r'(?:^|\n)\s*1\.0?\s+INDICATIONS\s+AND\s+USAGE\s*\n(.*?)(?=\n\s*2\.|\Z)',
-         re.DOTALL | re.MULTILINE),
-
-        # Pattern 6: ALL CAPS standalone header
-        (r'(?:^|\n)\s*INDICATIONS\s+AND\s+USAGE\s*\n(.*?)(?=\n\s*DOSAGE\s+AND\s+ADMINISTRATION|\n\s*[A-Z\s]{15,}\n|\Z)',
-         re.DOTALL | re.MULTILINE | re.IGNORECASE),
-
-        # Pattern 7: Bold markdown format
-        (r'\*\*INDICATIONS\s+AND\s+USAGE\*\*\s*\n?(.*?)(?=\*\*DOSAGE|\*\*[A-Z]|##\s|\Z)',
+        (r'(?:^|\n)\s*1\.?\s+INDICATIONS\s+AND\s+USAGE\s*\n(.*?)(?=' + stop_regex + r')',
          re.DOTALL | re.IGNORECASE),
 
-        # Pattern 8: Numbered markdown (1. INDICATIONS)
-        (r'(?:\*\*)?1(?:\*\*)?[\.\)]\s*INDICATIONS\s+AND\s+USAGE\s*\n(.*?)(?=(?:\*\*)?2(?:\*\*)?[\.\)]|##\s+2|\Z)',
+        # Pattern 5: ALL CAPS standalone header
+        (r'(?:^|\n)\s*INDICATIONS\s+AND\s+USAGE\s*\n(.*?)(?=' + stop_regex + r')',
+         re.DOTALL | re.IGNORECASE),
+         
+        # Pattern 6: Bold markdown format
+        (r'\*\*INDICATIONS\s+AND\s+USAGE\*\*\s*\n?(.*?)(?=' + r'(?:\n\s*\*\*(?:DOSAGE|CONTRAINDICATIONS))' + r'|' + stop_regex + r')',
          re.DOTALL | re.IGNORECASE),
     ]
 
@@ -60,7 +66,7 @@ def extract_indications_and_usage_fda(context: str) -> str:
         if match:
             section = match.group(1).strip()
             # Filter out if too short (likely false positive)
-            if len(section) > 50:  # Lowered from 100 for markdown output
+            if len(section) > 50:
                 return section
 
     # Fallback: Search for "indicated for" or "is indicated" patterns
@@ -73,7 +79,6 @@ def extract_indications_and_usage_fda(context: str) -> str:
     for pattern in fallback_patterns:
         matches = re.findall(pattern, context, re.DOTALL | re.IGNORECASE)
         if matches:
-            # Combine all matches
             if isinstance(matches[0], tuple):
                 results = [' '.join(m).strip() for m in matches]
             else:
