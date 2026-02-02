@@ -10,82 +10,81 @@ from typing import Dict, List
 def extract_indications_and_usage_fda(context: str) -> str:
     """
     Extract INDICATIONS AND USAGE section from FDA pharmaceutical labels.
-    Handles multiple FDA label formats.
-    
-    Args:
-        context: Full pharmaceutical label text
-        
-    Returns:
-        Extracted INDICATIONS AND USAGE section text
+    Optimized to avoid regex catastrophic backtracking.
     """
     
-    # Define robust stop patterns (next major sections)
-    # We look for Section 2 (Dosage), Section 3 (Dosage Forms), or Section 4 (Contraindications)
-    # or just the section names themselves.
-    stop_patterns = [
-        r'DOSAGE\s+AND\s+ADMINISTRATION',
-        r'DOSAGE\s+FORMS\s+AND\s+STRENGTHS',
-        r'CONTRAINDICATIONS',
-        r'WARNINGS\s+AND\s+PRECAUTIONS',
-        r'BOXED\s+WARNING'
-    ]
-    
-    # Create the lookahead regex part: (?=\n\s*(?:2\.|2\s|DOSAGE...)...)
-    # We account for optonal numbers (2, 2., 2.0)
-    stop_regex = r'(?:\n\s*(?:(?:2|3|4|5)\.?\s*)?(?:' + '|'.join(stop_patterns) + r')|\Z)'
-
-    # Try multiple patterns in order of specificity
-    patterns = [
-        # Pattern 1: Markdown header with --- markers (matches: ## ---INDICATIONS AND USAGE ---)
-        (r'#{1,3}\s*---\s*INDICATIONS\s+AND\s+USAGE\s*---?\s*\n(.*?)(?=' + r'(?:\n\s*#{1,3}\s*---?\s*(?:DOSAGE|CONTRAINDICATIONS))' + r'|' + stop_regex + r')',
-         re.DOTALL | re.IGNORECASE),
-
-        # Pattern 2: Plain --- markers (original format)
-        (r'---\s*INDICATIONS\s+AND\s+USAGE\s*---\s*\n?(.*?)(?=' + r'(?:\n\s*---\s*(?:DOSAGE|CONTRAINDICATIONS))' + r'|' + stop_regex + r')',
-         re.DOTALL | re.IGNORECASE),
-
-        # Pattern 3: Markdown ## header without dashes
-        (r'##\s+INDICATIONS\s+AND\s+USAGE\s*\n(.*?)(?=' + r'(?:\n\s*##\s+(?:DOSAGE|CONTRAINDICATIONS))' + r'|' + stop_regex + r')',
-         re.DOTALL | re.IGNORECASE),
-
-        # Pattern 4: Numbered section format (1 INDICATIONS AND USAGE)
-        (r'(?:^|\n)\s*1\.?\s+INDICATIONS\s+AND\s+USAGE\s*\n(.*?)(?=' + stop_regex + r')',
-         re.DOTALL | re.IGNORECASE),
-
-        # Pattern 5: ALL CAPS standalone header
-        (r'(?:^|\n)\s*INDICATIONS\s+AND\s+USAGE\s*\n(.*?)(?=' + stop_regex + r')',
-         re.DOTALL | re.IGNORECASE),
-         
-        # Pattern 6: Bold markdown format
-        (r'\*\*INDICATIONS\s+AND\s+USAGE\*\*\s*\n?(.*?)(?=' + r'(?:\n\s*\*\*(?:DOSAGE|CONTRAINDICATIONS))' + r'|' + stop_regex + r')',
-         re.DOTALL | re.IGNORECASE),
+    # 1. Define Start Patterns (just finding the header)
+    start_patterns = [
+        r'#{1,3}\s*---\s*INDICATIONS\s+AND\s+USAGE\s*---?',
+        r'---\s*INDICATIONS\s+AND\s+USAGE\s*---',
+        r'##\s+INDICATIONS\s+AND\s+USAGE',
+        r'(?:^|\n)\s*1\.?\s+INDICATIONS\s+AND\s+USAGE\s*(?:\n|$)',
+        r'(?:^|\n)\s*INDICATIONS\s+AND\s+USAGE\s*(?:\n|$)',
+        r'\*\*INDICATIONS\s+AND\s+USAGE\*\*'
     ]
 
-    for pattern, flags in patterns:
-        match = re.search(pattern, context, flags)
+    start_idx = -1
+    matched_pattern_end = -1
+
+    # Find the BEST start match (first occurrence of high-priority patterns)
+    for pattern in start_patterns:
+        match = re.search(pattern, context, re.IGNORECASE)
         if match:
-            section = match.group(1).strip()
-            # Filter out if too short (likely false positive)
-            if len(section) > 50:
-                return section
+            start_idx = match.start()
+            matched_pattern_end = match.end()
+            break
+    
+    # Fallback to loose search if precise patterns fail
+    if start_idx == -1:
+        # Fallback: Search for "indicated for" sentences
+        fallback_patterns = [
+            r'([A-Z][a-z]+(?:\s+[A-Z]?[a-z]+)*)\s+is\s+(?:a\s+\w+\s+)?indicated\s+for\s+(.*?)(?:\.|(?=\n\n))',
+            r'(?:is\s+)?indicated\s+for\s+(?:the\s+)?treatment\s+of\s+(.*?)(?:\.|(?=\n\n))',
+            r'(?:is\s+)?indicated\s+(?:for|in|as)\s+(.*?)(?:\.|(?=\n\n))',
+        ]
+        results = []
+        for pattern in fallback_patterns:
+            matches = re.findall(pattern, context, re.DOTALL | re.IGNORECASE)
+            if matches:
+                 # Flatten tuples if any
+                for m in matches:
+                    if isinstance(m, tuple):
+                        results.append(' '.join(m).strip())
+                    else:
+                        results.append(m.strip())
+        
+        if results:
+            combined = '\n'.join(results)
+            return combined if len(combined) > 30 else ""
+        return ""
 
-    # Fallback: Search for "indicated for" or "is indicated" patterns
-    fallback_patterns = [
-        r'([A-Z][a-z]+(?:\s+[A-Z]?[a-z]+)*)\s+is\s+(?:a\s+\w+\s+)?indicated\s+for\s+(.*?)(?:\.|(?=\n\n))',
-        r'(?:is\s+)?indicated\s+for\s+(?:the\s+)?treatment\s+of\s+(.*?)(?:\.|(?=\n\n))',
-        r'(?:is\s+)?indicated\s+(?:for|in|as)\s+(.*?)(?:\.|(?=\n\n))',
+    # 2. Define Stop Patterns (next section headers)
+    stop_patterns = [
+        r'(?:^|\n)\s*(?:2\.?|3\.?|4\.?|5\.?)\s*DOSAGE\s+AND\s+ADMINISTRATION',
+        r'(?:^|\n)\s*DOSAGE\s+AND\s+ADMINISTRATION',
+        r'(?:^|\n)\s*DOSAGE\s+FORMS',
+        r'(?:^|\n)\s*CONTRAINDICATIONS',
+        r'(?:^|\n)\s*WARNINGS\s+AND\s+PRECAUTIONS',
+        r'(?:^|\n)\s*BOXED\s+WARNING'
     ]
 
-    for pattern in fallback_patterns:
-        matches = re.findall(pattern, context, re.DOTALL | re.IGNORECASE)
-        if matches:
-            if isinstance(matches[0], tuple):
-                results = [' '.join(m).strip() for m in matches]
-            else:
-                results = [m.strip() for m in matches]
-            combined = '\n'.join(results)
-            if len(combined) > 30:
-                return combined
+    # Search for the NEAREST stop pattern after the start index
+    remaining_text = context[matched_pattern_end:]
+    stop_idx = len(remaining_text) # Default to end of text
+
+    for pattern in stop_patterns:
+        match = re.search(pattern, remaining_text, re.IGNORECASE)
+        if match:
+            # We want the nearest stop
+            if match.start() < stop_idx:
+                stop_idx = match.start()
+    
+    # Extract satisfaction
+    section_content = remaining_text[:stop_idx].strip()
+    
+    # Filter junk
+    if len(section_content) > 50:
+        return section_content
 
     return ""
 
