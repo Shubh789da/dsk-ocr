@@ -6,16 +6,13 @@ Extracts INDICATIONS AND USAGE from FDA pharmaceutical label PDFs
 # CRITICAL: Set environment variables FIRST, before ANY imports
 import os
 os.environ['VLLM_USE_V1'] = '0'  # Disable V1 engine (causes OOM with multimodal)
-os.environ['TOKENIZERS_PARALLELISM'] = 'false'  # Prevent fork warning in serverless
 # Don't force XFORMERS - let vLLM auto-detect the best backend for the GPU
 # os.environ['VLLM_ATTENTION_BACKEND'] = 'XFORMERS'
 os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'  # Help with memory fragmentation
 
 import io
-import re
 import base64
 import tempfile
-import requests
 
 import torch
 import fitz  # PyMuPDF
@@ -43,6 +40,10 @@ from botocore.exceptions import ClientError
 MODEL_PATH = os.getenv('MODEL_PATH', 'deepseek-ai/DeepSeek-OCR-2')
 CROP_MODE = os.getenv('CROP_MODE', 'True').lower() == 'true'
 
+# Auto-confi
+MODEL_PATH = os.getenv('MODEL_PATH', 'deepseek-ai/DeepSeek-OCR-2')
+CROP_MODE = os.getenv('CROP_MODE', 'True').lower() == 'true'
+
 # Auto-configure memory settings based on GPU
 if torch.cuda.is_available():
     total_vram_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
@@ -59,11 +60,11 @@ if torch.cuda.is_available():
         DEFAULT_MAX_LEN = 5192
         DEFAULT_MAX_SEQS = 36
         DEFAULT_WORKERS = 36
-    elif total_vram_gb >= 20:  # RTX 4090/3090 - SAFE DEFAULTS for RunPod
-        DEFAULT_GPU_MEM = 0.70  # Reduced from 0.90 to prevent OOM
+    elif total_vram_gb >= 20:  # RTX 4090/3090 - TESTED SETTINGS
+        DEFAULT_GPU_MEM = 0.90  # Tested: works well
         DEFAULT_MAX_LEN = 4096
-        DEFAULT_MAX_SEQS = 16   # Reduced concurrency to prevent OOM
-        DEFAULT_WORKERS = 16
+        DEFAULT_MAX_SEQS = 20  # Tested: 1.025s/page, 58.6 pages/min
+        DEFAULT_WORKERS = 20
     else:
         raise RuntimeError(f"GPU has only {total_vram_gb:.1f}GB VRAM. Minimum 20GB required.")
 else:
@@ -116,7 +117,7 @@ logits_processors = [
     NoRepeatNGramLogitsProcessor(
         ngram_size=20,
         window_size=50,
-        whitelist_token_ids={128821, 128822}
+                whitelist_token_ids={128821, 128822}
     )
 ]
 
@@ -144,8 +145,7 @@ def pdf_to_images(pdf_bytes, dpi=108):
         img_data = pixmap.tobytes("png")
         img = Image.open(io.BytesIO(img_data))
         images.append(img)
-
-    pdf_document.close()
+        pdf_document.close()
     return images
 
 
@@ -179,13 +179,12 @@ def clean_ocr_output(text):
             text = text.replace(match[0], '').replace('\\coloneqq', ':=').replace('\\eqqcolon', '=:')
 
     # Remove end of sentence marker
-    text = text.replace('<｜end▁of▁sentence｜>', '')
+    text = text.replace('<  ^|end ^v^aof ^v^asentence  ^|>', '')
 
     # Clean up multiple newlines
     text = re.sub(r'\n\n\n+', '\n\n', text)
 
     return text.strip()
-
 
 def process_pdf(pdf_bytes):
     """
@@ -224,7 +223,6 @@ def process_pdf(pdf_bytes):
         content = clean_ocr_output(content)
         if content:
             full_text_parts.append(content)
-
     # Combine all pages
     full_text = '\n\n--- Page Break ---\n\n'.join(full_text_parts)
 
@@ -240,6 +238,8 @@ def process_pdf(pdf_bytes):
         print("-" * 40)
 
         # Check for section header (not just the word "INDICATIONS")
+        import re as re_debug
+
         # Look for the actual section header patterns
         section_patterns = [
             r'---\s*INDICATIONS\s+AND\s+USAGE\s*---',  # FDA highlights format
@@ -250,7 +250,7 @@ def process_pdf(pdf_bytes):
 
         found_section = False
         for pattern in section_patterns:
-            match = re.search(pattern, full_text, re.IGNORECASE)
+            match = re_debug.search(pattern, full_text, re_debug.IGNORECASE)
             if match:
                 idx = match.start()
                 print(f"\n[DEBUG] Found section header matching pattern: {pattern}")
@@ -261,7 +261,6 @@ def process_pdf(pdf_bytes):
                 print("-" * 40)
                 found_section = True
                 break
-
         if not found_section:
             upper_text = full_text.upper()
             if 'INDICATIONS' in upper_text:
@@ -292,31 +291,29 @@ def process_pdf(pdf_bytes):
         "indications_and_usage": indications,
         "page_count": len(images)
     }
-
-
 def upload_to_s3(content, filename, content_type="text/markdown"):
     """
     Upload content to S3 bucket.
-    
+
     Args:
         content: String content to upload
         filename: Name of the file (e.g., 'job123_full_text.md')
         content_type: MIME type of the content
-    
+
     Returns:
         S3 URL if successful, None if failed
     """
     bucket_name = os.getenv('S3_BUCKET_NAME', 'deepseek-ocr-sy')
     region = os.getenv('AWS_DEFAULT_REGION', 'ap-south-2')
-    
+
     # Check if AWS credentials are available
     aws_access_key = os.getenv('AWS_ACCESS_KEY_ID')
     aws_secret_key = os.getenv('AWS_SECRET_ACCESS_KEY')
-    
+
     if not aws_access_key or not aws_secret_key:
         print("[S3] Warning: AWS credentials not configured, skipping S3 upload")
         return None
-    
+
     try:
         s3_client = boto3.client(
             's3',
@@ -324,18 +321,18 @@ def upload_to_s3(content, filename, content_type="text/markdown"):
             aws_access_key_id=aws_access_key,
             aws_secret_access_key=aws_secret_key
         )
-        
+
         s3_client.put_object(
             Bucket=bucket_name,
             Key=filename,
             Body=content.encode('utf-8'),
             ContentType=content_type
         )
-        
+
         s3_url = f"s3://{bucket_name}/{filename}"
         print(f"[S3] Uploaded: {s3_url}")
         return s3_url
-        
+
     except ClientError as e:
         print(f"[S3] Error uploading to S3: {e}")
         return None
@@ -372,7 +369,6 @@ def handler(job):
     """
     job_input = job["input"]
     job_id = job.get("id", "unknown")
-
     # Get PDF data
     pdf_bytes = None
 
@@ -385,8 +381,9 @@ def handler(job):
 
     elif "pdf_url" in job_input:
         # Download PDF from URL
+        import requests
         try:
-            response = requests.get(job_input["pdf_url"], timeout=120)
+            response = requests.get(job_input["pdf_url"], timeout=60)
             response.raise_for_status()
             pdf_bytes = response.content
         except Exception as e:
@@ -408,7 +405,7 @@ def handler(job):
     }
 
     # Include full text if requested
-    if job_input.get("return_full_text", False):
+     if job_input.get("return_full_text", False):
         response["full_text"] = result["full_text"]
 
     # Upload to S3 if requested
@@ -416,13 +413,13 @@ def handler(job):
         from datetime import datetime
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         prefix = job_input.get("filename_prefix", job_id)
-        
+
         # Upload full OCR text
         full_text_filename = f"{prefix}_{timestamp}_full_text.md"
         full_text_url = upload_to_s3(result["full_text"], full_text_filename)
         if full_text_url:
             response["s3_full_text_url"] = full_text_url
-        
+
         # Upload indications section
         if result["indications_and_usage"]:
             indications_filename = f"{prefix}_{timestamp}_indications.md"
@@ -435,33 +432,21 @@ def handler(job):
 
 # For local testing
 if __name__ == "__main__":
-    # Test with a sample PDF (file path or URL)
+    # Test with a sample PDF
     import sys
     if len(sys.argv) > 1:
-        input_path = sys.argv[1]
-
-        # Check if it's a URL or local file
-        if input_path.lower().startswith(('http://', 'https://')):
-            print(f"Downloading PDF from URL: {input_path}")
-            response = requests.get(input_path, timeout=120)
-            response.raise_for_status()
-            pdf_bytes = response.content
-            print(f"Downloaded {len(pdf_bytes):,} bytes")
-        else:
-            print(f"Reading local file: {input_path}")
-            with open(input_path, "rb") as f:
-                pdf_bytes = f.read()
+        pdf_path = sys.argv[1]
+        with open(pdf_path, "rb") as f:
+            pdf_bytes = f.read()
 
         result = process_pdf(pdf_bytes)
         print("=" * 80)
         print("INDICATIONS AND USAGE:")
         print("=" * 80)
-        if result["indications_and_usage"]:
-            print(result["indications_and_usage"][:2000])
-            print(f"\n... (Total: {len(result['indications_and_usage'])} chars)")
-        else:
-            print("(No content extracted)")
+        print(result["indications_and_usage"][:2000])
+        print(f"\n... (Total: {len(result['indications_and_usage'])} chars)")
         print(f"\nProcessed {result['page_count']} pages")
     else:
         # Start RunPod serverless
         runpod.serverless.start({"handler": handler})
+       
