@@ -215,20 +215,25 @@ def process_pdf(pdf_bytes):
         batch_inputs = list(executor.map(process_single_image, images))
 
     # Run OCR inference
+    print("\n[INFO] Starting model inference...")
     outputs_list = llm.generate(batch_inputs, sampling_params=sampling_params)
+    print("\n[INFO] Inference complete. Processing outputs...")
 
     # Collect and clean output
     full_text_parts = []
-    for output in outputs_list:
+    for i, output in enumerate(outputs_list):
+        print(f"[DEBUG] Processing page {i+1}/{len(outputs_list)}...")
         content = output.outputs[0].text
         content = clean_ocr_output(content)
         if content:
             full_text_parts.append(content)
 
+    print(f"[INFO] Joining {len(full_text_parts)} pages...")
     # Combine all pages
     full_text = '\n\n--- Page Break ---\n\n'.join(full_text_parts)
 
     # Clean OCR artifacts
+    print("[INFO] Cleaning final OCR artifacts...")
     full_text = clean_ocr_artifacts(full_text)
 
     # Debug output if enabled
