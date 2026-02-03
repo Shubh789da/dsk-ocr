@@ -1,0 +1,27 @@
+--- Starting Verification ---
+
+--- LOOP: 021108s015lbl.pdf ---
+  PDF Text Length: 36745 chars
+  Header Snippet: '\xa0\n\xa0\n \n \n \n \n \nRENOVA® \n(TRETINOIN CREAM) \n0.02% \nFOR TOPICAL USE ON THE FACE. NOT FOR OPHTHALMIC, OR'
+  Identity: RENOVA detected.
+  [SUCCESS] Extracted 5642 chars
+  Snippet: (To understand fully the indication for this product, please read the entire INDICATIONS  AND USAGE section of the labeling.)  RENOVA® (tretinoin cream) 0.02% is indicated as an adjunctive agent (see ...
+  End Snippet: ... RENOVA® (tretinoin cream) 0.02% from their comprehensive skin  care and sunlight avoidance program.
+
+--- LOOP: 21108lbl.pdf ---
+  PDF Text Length: 34339 chars
+  Header Snippet: '1\nRENOVA®\n1\n(tretinoin cream)\n2\n0.02%\n3\n4\nFOR TOPICAL USE ON THE FACE. NOT FOR OPHTHALMIC, ORAL, OR\n'
+  Identity: RENOVA detected.
+  [SUCCESS] Extracted 5841 chars
+  Snippet: 30 31 (To understand fully the indication for this product, please read the entire 32 INDICATIONS AND USAGE section of the labeling.) 33 34 RENOVA (tretinoin cream) 0.02% is indicated as an adjunctive...
+  End Snippet: ...tinuation of RENOVA 0.02% from their comprehensive skin care and 2 sunlight avoidance program. 3 4 5
+
+--- LOOP: 021976s045_202895s020lbl.pdf ---
+  PDF Text Length: 192288 chars
+  Header Snippet: ' \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n \n'
+  Identity: PREZISTA detected.
+  [SUCCESS] Extracted 320 chars
+  Snippet: PREZISTA®, co-administered with ritonavir (PREZISTA/ritonavir), in combination with other  antiretroviral agents, is indicated for the treatment of human immunodeficiency virus (HIV-1)  infection in a...
+  End Snippet: ...atients 3 years of age and older [see Use in Specific Populations  (8.4) and Clinical Studies (14)].
+
+--- ALL DONE ---

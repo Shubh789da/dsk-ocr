@@ -7,82 +7,59 @@ import re
 from typing import Dict, List
 
 
+# Compiled regex patterns for INDICATIONS AND USAGE section extraction
+INDICATIONS_HEADER = re.compile(
+    r"""
+    ^\s*
+    (\#{1,6}\s*)?          # Markdown heading
+    [-*]*\s*               # decoration before
+    (\d+\s*\.?\s*)?        # optional numbering
+    INDICATIONS?\s+(?:AND|&)\s+USAGE
+    \s*:?\s*               # optional colon
+    [-*]*\s*               # decoration after
+    $
+    """,
+    re.IGNORECASE | re.MULTILINE | re.VERBOSE
+)
+
+NEXT_SECTION_HEADER = re.compile(
+    r"""
+    ^\s*
+    (\#{1,6}\s*)?          # Markdown heading
+    [-*]*\s*
+    (\d+\s*\.?\s*)?
+    [A-Z][A-Z\s/]{4,}     # FDA section titles (all caps)
+    \s*:?\s*
+    [-*]*\s*
+    $
+    """,
+    re.MULTILINE | re.VERBOSE
+)
+
+
 def extract_indications_and_usage_fda(context: str) -> str:
     """
     Extract INDICATIONS AND USAGE section from FDA pharmaceutical labels.
-    Optimized to avoid regex catastrophic backtracking.
+    Uses simple pattern matching to find section boundaries.
+
+    Args:
+        context: Full label text (markdown or plain text)
+
+    Returns:
+        Extracted indications section text, or empty string if not found
     """
-    
-    # 1. Define Start Patterns (just finding the header)
-    start_patterns = [
-        r'#{1,3}\s*---\s*INDICATIONS\s+AND\s+USAGE\s*---?',
-        r'---\s*INDICATIONS\s+AND\s+USAGE\s*---',
-        r'##\s+INDICATIONS\s+AND\s+USAGE',
-        r'(?:^|\n)\s*1\.?\s+INDICATIONS\s+AND\s+USAGE\s*(?:\n|$)',
-        r'(?:^|\n)\s*INDICATIONS\s+AND\s+USAGE\s*(?:\n|$)',
-        r'\*\*INDICATIONS\s+AND\s+USAGE\*\*'
-    ]
-
-    start_idx = -1
-    matched_pattern_end = -1
-
-    # Find the BEST start match (first occurrence of high-priority patterns)
-    for pattern in start_patterns:
-        match = re.search(pattern, context, re.IGNORECASE)
-        if match:
-            start_idx = match.start()
-            matched_pattern_end = match.end()
-            break
-    
-    # Fallback to loose search if precise patterns fail
-    if start_idx == -1:
-        # Fallback: Search for "indicated for" sentences
-        fallback_patterns = [
-            r'([A-Z][a-z]+(?:\s+[A-Z]?[a-z]+)*)\s+is\s+(?:a\s+\w+\s+)?indicated\s+for\s+(.*?)(?:\.|(?=\n\n))',
-            r'(?:is\s+)?indicated\s+for\s+(?:the\s+)?treatment\s+of\s+(.*?)(?:\.|(?=\n\n))',
-            r'(?:is\s+)?indicated\s+(?:for|in|as)\s+(.*?)(?:\.|(?=\n\n))',
-        ]
-        results = []
-        for pattern in fallback_patterns:
-            matches = re.findall(pattern, context, re.DOTALL | re.IGNORECASE)
-            if matches:
-                 # Flatten tuples if any
-                for m in matches:
-                    if isinstance(m, tuple):
-                        results.append(' '.join(m).strip())
-                    else:
-                        results.append(m.strip())
-        
-        if results:
-            combined = '\n'.join(results)
-            return combined if len(combined) > 30 else ""
+    match = INDICATIONS_HEADER.search(context)
+    if not match:
         return ""
 
-    # 2. Define Stop Patterns (next section headers)
-    stop_patterns = [
-        r'(?:^|\n)\s*(?:2\.?|3\.?|4\.?|5\.?)\s*DOSAGE\s+AND\s+ADMINISTRATION',
-        r'(?:^|\n)\s*DOSAGE\s+AND\s+ADMINISTRATION',
-        r'(?:^|\n)\s*DOSAGE\s+FORMS',
-        r'(?:^|\n)\s*CONTRAINDICATIONS',
-        r'(?:^|\n)\s*WARNINGS\s+AND\s+PRECAUTIONS',
-        r'(?:^|\n)\s*BOXED\s+WARNING'
-    ]
+    start = match.end()
 
-    # Search for the NEAREST stop pattern after the start index
-    remaining_text = context[matched_pattern_end:]
-    stop_idx = len(remaining_text) # Default to end of text
+    next_match = NEXT_SECTION_HEADER.search(context, start)
+    end = next_match.start() if next_match else len(context)
 
-    for pattern in stop_patterns:
-        match = re.search(pattern, remaining_text, re.IGNORECASE)
-        if match:
-            # We want the nearest stop
-            if match.start() < stop_idx:
-                stop_idx = match.start()
-    
-    # Extract satisfaction
-    section_content = remaining_text[:stop_idx].strip()
-    
-    # Filter junk
+    section_content = context[start:end].strip()
+
+    # Filter out sections that are too short (likely false matches)
     if len(section_content) > 50:
         return section_content
 
